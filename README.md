@@ -4,25 +4,23 @@ A mobile application for finding park benches with optimal sun exposure in Graz,
 
 ## Overview
 
-Sonnenbankerl (Sun Bench) is a Flutter-based mobile map application that helps users find park benches and view their current and predicted sun exposure. The app combines real-time weather data, sun position calculations, and terrain modeling to provide accurate information about which benches are currently sunny.
+Sonnenbankerl (Sun Bench) is a minimal Flutter-based mobile map application that helps users find park benches with optimal sun exposure in Graz, Austria. The app features a subtle OpenStreetMap humanitarian layer as background, displaying benches with clear symbols: yellowish for sunny benches and dark-blueish for shady ones. Tapping a sunny bench shows remaining sun exposure time, while tapping a shady bench predicts the next sunny period, accounting for sun position, terrain obstacles, and weather forecasts.
 
 ## Features
 
-- **Interactive Map**: Minimal basemap displaying park benches with clear, distinguishable symbols
+- **Minimal Interactive Map**: Subtle OpenStreetMap humanitarian layer background with park benches displayed as yellowish symbols (sunny) or dark-blueish symbols (shady)
 - **User Location**: Shows your current position on the map
-- **Sun Exposure Information**: View current sun status for each bench
-- **Detailed Bench Information**: 
-  - Total sun duration throughout the day
-  - Next time the bench will be in the sun
-  - Current weather conditions
-- **Real-time Updates**: Sun exposure status is pre-calculated on the server and updated based on current weather
+- **Bench Interactions**:
+  - Tap sunny bench: Display remaining sun exposure time (e.g., "until 16:53 | 3 hours 14 min")
+  - Tap shady bench: Show prediction for next sunny period, factoring in sun position, elevation model obstacles, and weather forecast
+- **Real-time Updates**: Sun exposure status pre-calculated on server, updated with current weather
 
 ## Technical Architecture
 
 ### Frontend
 - **Framework**: Flutter
 - **Platform**: Mobile (iOS/Android)
-- **Map Display**: Interactive map showing benches and user location
+- **Map Display**: Minimal interactive map with OpenStreetMap humanitarian layer, bench symbols (yellowish for sunny, dark-blueish for shady), and tap interactions for sun exposure details
 
 ### Data Sources
 
@@ -36,13 +34,16 @@ Sonnenbankerl (Sun Bench) is a Flutter-based mobile map application that helps u
 - **Usage**: Real-time weather conditions affecting sun exposure
 
 #### Terrain Model
-- **Resolution**: 1m/10m Digital Height Model (DHM)
-- **Purpose**: Shadow calculation considering terrain and buildings
+- **Digital Surface Model (DSM)**: 1m/10m resolution including buildings and vegetation
+- **Digital Elevation Model (DEM)**: Ground elevation for bench heights
+- **Purpose**: DSM for shadow calculations; benches draped to DEM for accurate ground positioning
 
 ### Backend Processing
-- **Sun Position Calculation**: Pre-computed sun positions throughout the year (constant astronomical data)
-- **Shadow Modeling**: GIS-based shadow calculations using terrain model
-- **Cloud Processing**: Server-side computation of sun exposure status before app requests
+- **Database**: PostgreSQL with PostGIS extension for geospatial data and calculations
+- **Precomputation**: Sun positions and shadow modeling pre-calculated for each bench using DEM-derived z-coordinates and Digital Surface Model (DSM); stored as sun exposure profiles in database
+- **Calculations**: Defined as SQL queries/stored procedures in PostGIS for spatial operations, sun position formulas, and line-of-sight checks; complex shadows handled via external scripts if needed
+- **Real-time Integration**: App pairs precomputed data with live weather API for current exposure status and predictions
+- **Updates**: Recomputation pipeline for new user-added benches or data changes
 
 ## Scope
 
@@ -55,17 +56,19 @@ This is a proposal for a location-based services course project (VU_LBS, Winter 
 
 ## Data Requirements
 
-1. OSM data for all park benches in Graz
-2. Sun position and shadow calculation system (potentially GIS-based)
-3. Digital Height Model (DHM) at 1m or 10m resolution
-4. Weather API integration (GeoSphere Austria)
+1. OSM data for all park benches in Graz (draped to DEM for ground elevation z-coordinates)
+2. Digital Surface Model (DSM) at 1m or 10m resolution for shadow calculations (including buildings and vegetation)
+3. Digital Elevation Model (DEM) for accurate bench ground heights
+4. Weather API integration (GeoSphere Austria) for real-time conditions
+5. PostgreSQL with PostGIS for geospatial storage and SQL-based calculations
 
 ## Development Notes
 
-- Dynamic elements: Weather conditions (clouds, precipitation)
-- Static elements: Sun position (predictable), terrain model
-- Backend must pre-calculate sun exposure to ensure instant display when app opens
-- APIs will be used extensively for weather and geographic data
+- **Precomputation Strategy**: Sun exposure profiles pre-calculated and stored in PostGIS database for fast queries; recomputation triggered for new benches or data updates
+- **Dynamic vs. Static**: Weather (dynamic, via API) paired with precomputed sun/DSM data (static)
+- **User Contributions**: Design supports user-added benches with elevation data, integrated into recomputation pipeline
+- **Performance**: Instant app display via precalculated data; predictions simplified by stored profiles
+- **APIs**: Weather and geographic data; PostGIS handles spatial calculations
 
 ## License
 
