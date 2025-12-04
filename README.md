@@ -39,11 +39,13 @@ Sonnenbankerl (Sun Bench) is a minimal Flutter-based mobile map application that
 - **Purpose**: DSM for shadow calculations; benches draped to DEM for accurate ground positioning
 
 ### Backend Processing
-- **Database**: PostgreSQL with PostGIS extension for geospatial data and calculations
-- **Precomputation**: Sun positions and shadow modeling pre-calculated for each bench using DEM-derived z-coordinates and Digital Surface Model (DSM); stored as sun exposure profiles in database
-- **Calculations**: Defined as SQL queries/stored procedures in PostGIS for spatial operations, sun position formulas, and line-of-sight checks; complex shadows handled via external scripts if needed
+- **Database**: PostgreSQL with PostGIS and TimescaleDB extensions for geospatial and time-series data management
+- **Precomputation Pipeline**: Binary sun exposure dataset (sunny/shady at 10-min intervals) pre-calculated annually for ~200-1000 benches using sun position algorithms (suncalc_postgres) and line-of-sight checks against 1m DSM; bench elevation = DEM + 1.2m (upper body/head); stored as compressed time-series profiles in hypertables for fast queries
+- **Calculations**: Custom PL/pgSQL functions for spatial operations, sun position formulas, and DSM-based shadow modeling; batch-computed with Python parallelization
 - **Real-time Integration**: App pairs precomputed data with live weather API for current exposure status and predictions
-- **Updates**: Recomputation pipeline for new user-added benches or data changes
+- **Updates**: Incremental recomputation every 6 months or for new benches; retention policies drop data >1 year old
+
+See [sunshine_calculation_pipeline.md](sunshine_calculation_pipeline.md) for detailed precomputation steps.
 
 ## Scope
 
