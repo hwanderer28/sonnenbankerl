@@ -70,6 +70,10 @@ This is a proposal for a location-based services course project (VU_LBS, Winter 
 - **Performance**: Instant app display via precalculated data; predictions simplified by stored profiles
 - **APIs**: Weather and geographic data; PostGIS handles spatial calculations
 
+## Resources
+
+See [resources.md](resources.md) for a comprehensive list of tools, data sources, APIs, and documentation used in this project.
+
 ## License
 
 TBD
