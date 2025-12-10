@@ -1,80 +1,123 @@
-# Sonnenbankerl
+<div align="center">
+  <img src="assets/Sonnenbankerl_Icon.png" alt="Sonnenbankerl" width="200"/>
+  
+  # Sonnenbankerl
+  
+  **Find the perfect sunny bench in Graz**
+  
+  A mobile application for locating park benches with optimal sun exposure
+  
+  [![Flutter](https://img.shields.io/badge/Flutter-02569B?style=flat&logo=flutter&logoColor=white)](https://flutter.dev)
+  [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+  [![PostGIS](https://img.shields.io/badge/PostGIS-4169E1?style=flat&logo=postgis&logoColor=white)](https://postgis.net)
+  [![OpenStreetMap](https://img.shields.io/badge/OpenStreetMap-7EBC6F?style=flat&logo=openstreetmap&logoColor=white)](https://www.openstreetmap.org)
 
-A mobile application for finding park benches with optimal sun exposure in Graz, Austria.
+  ---
+</div>
 
-## Overview
+## About
 
-Sonnenbankerl (Sun Bench) is a minimal Flutter-based mobile map application that helps users find park benches with optimal sun exposure in Graz, Austria. The app features a subtle OpenStreetMap humanitarian layer as background, displaying benches with clear symbols: yellowish for sunny benches and dark-blueish for shady ones. Tapping a sunny bench shows remaining sun exposure time, while tapping a shady bench predicts the next sunny period, accounting for sun position, terrain obstacles, and weather forecasts.
+Sonnenbankerl (Sun Bench) is a minimal Flutter-based mobile map application that helps users find park benches with optimal sun exposure in Graz, Austria. The app displays benches with clear symbols: yellowish for sunny benches and dark-blueish for shady ones. Tapping a sunny bench shows remaining sun exposure time, while tapping a shady bench predicts the next sunny period, accounting for sun position, terrain obstacles, and weather forecasts.
 
 ## Features
 
-- **Minimal Interactive Map**: Subtle OpenStreetMap humanitarian layer background with park benches displayed as yellowish symbols (sunny) or dark-blueish symbols (shady)
-- **User Location**: Shows your current position on the map
-- **Bench Interactions**:
-  - Tap sunny bench: Display remaining sun exposure time (e.g., "until 16:53 | 3 hours 14 min")
-  - Tap shady bench: Show prediction for next sunny period, factoring in sun position, elevation model obstacles, and weather forecast
-- **Real-time Updates**: Sun exposure status pre-calculated on server, updated with current weather
+### Interactive Map
+- Subtle OpenStreetMap humanitarian layer background
+- Real-time user location tracking
+- Visual bench indicators (yellow for sunny, dark blue for shady)
 
-## Technical Architecture
+### Smart Bench Analysis
+- **Sunny benches**: Display remaining sun exposure time
+  ```
+  until 16:53 | 3 hours 14 min
+  ```
+- **Shady benches**: Predict next sunny period based on sun position, terrain obstacles, and weather forecasts
+  ```
+  next estimated sunlight: 14.12.2025 10:12 | in 2 days 3 hours 14 min
+  ```
+
+### Real-time Data
+- Server-side pre-calculated sun exposure profiles
+- Live weather integration for accurate predictions
+
+## Technical Stack
 
 ### Frontend
-- **Framework**: Flutter
-- **Platform**: Mobile (iOS/Android)
-- **Map Display**: Minimal interactive map with OpenStreetMap humanitarian layer, bench symbols (yellowish for sunny, dark-blueish for shady), and tap interactions for sun exposure details
+| Component | Technology |
+|-----------|-----------|
+| Framework | Flutter |
+| Platform  | iOS / Android |
+| Map Layer | OpenStreetMap (Humanitarian) |
 
 ### Data Sources
+| Source | Purpose | Details |
+|--------|---------|---------|
+| **OpenStreetMap** | Bench locations | Park benches within Graz |
+| **GeoSphere Austria** | Weather data | Real-time conditions for Graz region |
+| **DSM (1m/10m)** | Shadow calculations | Buildings and vegetation obstacles |
+| **DEM** | Ground elevation | Accurate bench positioning |
 
-#### OpenStreetMap (OSM)
-- Source of park bench locations within Graz
-- Data stored in database for efficient querying
+### Backend Architecture
 
-#### Weather Data
-- **Provider**: GeoSphere Austria API
-- **Scope**: Weather data for Graz region
-- **Usage**: Real-time weather conditions affecting sun exposure
+```
+PostgreSQL + PostGIS + TimescaleDB
+├── Geospatial data management
+├── Time-series sun exposure profiles
+└── Custom PL/pgSQL spatial functions
+```
 
-#### Terrain Model
-- **Digital Surface Model (DSM)**: 1m/10m resolution including buildings and vegetation
-- **Digital Elevation Model (DEM)**: Ground elevation for bench heights
-- **Purpose**: DSM for shadow calculations; benches draped to DEM for accurate ground positioning
+#### Precomputation Pipeline
+- **Dataset**: Binary sun exposure (sunny/shady) at 10-minute intervals
+- **Coverage**: ~200-1000 benches, annual pre-calculation
+- **Algorithm**: Sun position calculations (suncalc_postgres) + line-of-sight checks against 1m DSM
+- **Bench Height**: DEM + 1.2m (upper body/head level)
+- **Storage**: Compressed time-series profiles in TimescaleDB hypertables
+- **Processing**: Python parallelization for batch computation
+- **Updates**: Incremental recomputation every 6 months; automatic cleanup of data >1 year old
 
-### Backend Processing
-- **Database**: PostgreSQL with PostGIS and TimescaleDB extensions for geospatial and time-series data management
-- **Precomputation Pipeline**: Binary sun exposure dataset (sunny/shady at 10-min intervals) pre-calculated annually for ~200-1000 benches using sun position algorithms (suncalc_postgres) and line-of-sight checks against 1m DSM; bench elevation = DEM + 1.2m (upper body/head); stored as compressed time-series profiles in hypertables for fast queries
-- **Calculations**: Custom PL/pgSQL functions for spatial operations, sun position formulas, and DSM-based shadow modeling; batch-computed with Python parallelization
-- **Real-time Integration**: App pairs precomputed data with live weather API for current exposure status and predictions
-- **Updates**: Incremental recomputation every 6 months or for new benches; retention policies drop data >1 year old
+📄 [Detailed pipeline documentation](docs/sunshine_calculation_pipeline.md)
 
-See [sunshine_calculation_pipeline.md](sunshine_calculation_pipeline.md) for detailed precomputation steps.
+#### Real-time Integration
+- Pre-computed sun/terrain data combined with live weather API
+- Fast query performance via pre-calculated profiles
+- Instant predictions without on-the-fly calculations
 
 ## Scope
 
-- **Geographic Area**: Graz, Austria
-- **Distance Calculation**: Straight-line (aerial) distance from user to benches
+| Aspect | Detail |
+|--------|--------|
+| Geographic Area | Graz, Austria |
+| Distance Calculation | Straight-line (aerial) distance |
 
 ## Project Status
 
-This is a proposal for a location-based services course project (VU_LBS, Winter 2025).
+🎓 **Course Project Proposal** for Location-Based Services (VU_LBS, Winter 2025)
 
 ## Data Requirements
 
-1. OSM data for all park benches in Graz (draped to DEM for ground elevation z-coordinates)
-2. Digital Surface Model (DSM) at 1m or 10m resolution for shadow calculations (including buildings and vegetation)
-3. Digital Elevation Model (DEM) for accurate bench ground heights
-4. Weather API integration (GeoSphere Austria) for real-time conditions
-5. PostgreSQL with PostGIS for geospatial storage and SQL-based calculations
+- [x] OSM park bench data for Graz (draped to DEM for z-coordinates)
+- [x] Digital Surface Model (DSM) at 1m/10m resolution
+- [x] Digital Elevation Model (DEM) for ground heights
+- [x] GeoSphere Austria API integration
+- [x] PostgreSQL with PostGIS extensions
 
-## Development Notes
+## Architecture Highlights
 
-- **Precomputation Strategy**: Sun exposure profiles pre-calculated and stored in PostGIS database for fast queries; recomputation triggered for new benches or data updates
-- **Dynamic vs. Static**: Weather (dynamic, via API) paired with precomputed sun/DSM data (static)
-- **User Contributions**: Design supports user-added benches with elevation data, integrated into recomputation pipeline
-- **Performance**: Instant app display via precalculated data; predictions simplified by stored profiles
-- **APIs**: Weather and geographic data; PostGIS handles spatial calculations
+### Performance Optimization
+- **Pre-computation strategy**: All sun exposure profiles calculated in advance
+- **Fast queries**: Pre-calculated data enables instant app responses
+- **Simplified predictions**: Stored profiles eliminate complex runtime calculations
 
-## Resources
+### Data Management
+- **Dynamic data**: Real-time weather via API
+- **Static data**: Pre-computed sun positions and DSM-based shadows
+- **User contributions**: Support for user-added benches with automated pipeline integration
+- **Retention policy**: Automated cleanup of outdated data
 
-See [resources.md](resources.md) for a comprehensive list of tools, data sources, APIs, and documentation used in this project.
+## Documentation
+
+- [Resources & References](docs/resources.md) - Tools, data sources, APIs, and documentation
+- [Sunshine Calculation Pipeline](docs/sunshine_calculation_pipeline.md) - Detailed precomputation workflow
 
 ## License
 
@@ -83,3 +126,9 @@ TBD
 ## Contributors
 
 TBD
+
+---
+
+<div align="center">
+  Made with ☀️ in Graz
+</div>
