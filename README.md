@@ -17,7 +17,15 @@
 
 ## About
 
-Sonnenbankerl (Sun Bench) is a minimal Flutter-based mobile map application that helps users find park benches with optimal sun exposure in Graz, Austria. The app displays benches with clear symbols: yellowish for sunny benches and dark-blueish for shady ones. Tapping a sunny bench shows remaining sun exposure time, while tapping a shady bench predicts the next sunny period, accounting for sun position, terrain obstacles, and weather forecasts.
+Sonnenbankerl (Sun Bench) is a minimal Flutter-based mobile map application that helps users find park benches with optimal sun exposure in Graz, Austria. 
+
+### Motivation
+
+Existing sunlight analysis tools like [Shadowmap](https://shadowmap.org) provide sophisticated 3D solar simulations serving photographers, architects, urban planners, and real estate professionals. These "Swiss Army knife" solutions offer powerful features—solar irradiance mapping, custom 3D model uploads, drone shot planning—but require technical understanding and intentional exploration of complex interfaces.
+
+Sonnenbankerl exists for a fundamentally different moment: you want to leave your house and sit somewhere sunny. Right now. No sliders, no learning curve, no professional analysis—just open the app, see which benches are sunny (yellow) or shady (blue), tap one, and know exactly how long you can enjoy the sun or when it will arrive. Simple, fast, beautiful.
+
+The app displays benches with clear visual indicators: yellowish for sunny benches and dark-blueish for shady ones. Tapping a sunny bench shows remaining sun exposure time, while tapping a shady bench predicts the next sunny period, accounting for sun position, terrain obstacles, and weather forecasts.
 
 ## Features
 
