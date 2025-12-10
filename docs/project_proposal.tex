@@ -1,0 +1,109 @@
+\documentclass[a4paper,10pt]{article}
+
+% Packages
+\usepackage[margin=1.3cm]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{fontawesome5}
+\usepackage{tcolorbox}
+\usepackage{multicol}
+\usepackage[sfdefault]{inter}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{tabularx}
+\usepackage{booktabs}
+
+% Define colors
+\definecolor{sunnyorange}{RGB}{255,165,0}
+\definecolor{darkblue}{RGB}{25,55,75}
+\definecolor{lightgray}{RGB}{245,245,245}
+\definecolor{accentblue}{RGB}{70,130,180}
+
+% Remove page numbers
+\pagestyle{empty}
+
+% Custom section styling
+\usepackage{titlesec}
+\titleformat{\section}{\large\bfseries\color{darkblue}}{}{0em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{0.2em}{0.15em}
+
+% Spacing
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.2em}
+\setlength{\columnsep}{0.8cm}
+
+\begin{document}
+
+% Header with logo
+\begin{center}
+\begin{tikzpicture}[remember picture,overlay]
+  \node[anchor=north] at (current page.north) [yshift=-1cm] {
+    \includegraphics[width=7cm]{assets/Sonnenbankerl_Icon.png}
+  };
+\end{tikzpicture}
+\vspace{7.3cm}
+
+{\LARGE\bfseries\color{sunnyorange} Sonnenbankerl}\\[0.3em]
+
+{\normalsize\color{gray} Mobile Application for Finding Sunny Park Benches}\\[0.15em]
+{\small Breitler Julian \textbar{} Freiburghaus Jonas \textbar{} Gruber Tobias}
+\end{center}
+
+\vspace{0.2em}
+
+% Project Idea
+\section*{{\faLightbulb} Basic Idea}
+
+\emph{Sonnenbankerl} is a \textcolor{sunnyorange}{mobile application} that helps users find sunny park benches in Graz, Austria. Open the app, see which benches are \textcolor{sunnyorange}{sunny (yellow) or shady (blue)} on an interactive map, and tap any bench to see how long it will remain sunny or when the next sunny period begins. The app combines \textcolor{sunnyorange}{precomputed sun exposure profiles} based on sun position and terrain obstacles with real-time weather data to deliver instant, accurate predictions without complex user interaction.
+
+\vspace{0.15em}
+
+% Two column layout
+\begin{multicols}{2}
+
+\section*{{\faUsers} The Need}
+
+Trial-and-error searching for sunny park seating wastes time and diminishes enjoyment of urban green spaces. Existing sunlight tools like Shadowmap serve professionals (photographers, architects, planners) with complex features requiring technical expertise. Sonnenbankerl addresses everyday park visitors who simply want to know: \textcolor{sunnyorange}{where can I sit in the sun right now, and for how long?} The app provides \textcolor{sunnyorange}{immediate, actionable answers} without sliders, 3D models, or learning curves—enabling spontaneous outdoor enjoyment and helping users maximize their time in nature during limited daylight hours in autumn, winter, and spring.
+
+\columnbreak
+
+\section*{{\faMap} Data Sources}
+
+\textbf{OpenStreetMap:} Park bench locations (POINT geometries) for Graz, Austria (~200-1000 benches)
+
+\textbf{BEV Digital Surface Model (DSM):} 1m/10m resolution raster data capturing buildings and vegetation for shadow calculations
+
+\textbf{BEV Digital Elevation Model (DEM):} Ground elevations for accurate 3D positioning (benches at DEM + 1.2m for upper body/head height)
+
+\textbf{GeoSphere Austria:} Real-time weather data for the Graz region to refine sun exposure predictions
+
+\textbf{Astronomical Calculations:} Sun azimuth and elevation angles for 52,560 timestamps (full year, 10-minute intervals) for Graz coordinates (47.07°N, 15.44°E) using suncalc\_postgres
+
+\end{multicols}
+
+\vspace{0.15em}
+
+\section*{{\faMobile} Key Features}
+
+\begin{multicols}{2}
+
+\textbf{Visual Bench Indicators:} Color-coded markers on an interactive map showing current sun exposure status in real-time.
+
+\textbf{Time Predictions:} For sunny benches, display \textcolor{sunnyorange}{remaining sun duration} (``until 16:53 | 3h 14min''). For shady benches, \textcolor{sunnyorange}{predict next sunny period} (``next predicted sunlight: 14.12.2025 10:12 | in 3d 2h 21min'').
+
+\columnbreak
+
+\textbf{Real-Time Integration:} Combines precomputed terrain-based sun profiles with live weather conditions for accurate forecasts.
+
+\textbf{Simple Interface:} No complex controls—just open, view, and tap for instant information tailored to spontaneous outdoor decisions.
+
+\end{multicols}
+
+\vspace{1em}
+
+\begin{center}
+\color{gray}\small Made with \color{sunnyorange}\faSun\color{gray}\, in Graz
+\end{center}
+
+\end{document}

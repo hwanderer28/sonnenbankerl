@@ -90,48 +90,12 @@ PostgreSQL + PostGIS + TimescaleDB
 - Fast query performance via pre-calculated profiles
 - Instant predictions without on-the-fly calculations
 
-## Scope
-
-| Aspect | Detail |
-|--------|--------|
-| Geographic Area | Graz, Austria |
-| Distance Calculation | Straight-line (aerial) distance |
-
-## Project Status
-
-🎓 **Course Project Proposal** for Location-Based Services (VU_LBS, Winter 2025)
-
-## Data Requirements
-
-- [x] OSM park bench data for Graz (draped to DEM for z-coordinates)
-- [x] Digital Surface Model (DSM) at 1m/10m resolution
-- [x] Digital Elevation Model (DEM) for ground heights
-- [x] GeoSphere Austria API integration
-- [x] PostgreSQL with PostGIS extensions
-
-## Architecture Highlights
-
-### Performance Optimization
-- **Pre-computation strategy**: All sun exposure profiles calculated in advance
-- **Fast queries**: Pre-calculated data enables instant app responses
-- **Simplified predictions**: Stored profiles eliminate complex runtime calculations
-
-### Data Management
-- **Dynamic data**: Real-time weather via API
-- **Static data**: Pre-computed sun positions and DSM-based shadows
-- **User contributions**: Support for user-added benches with automated pipeline integration
-- **Retention policy**: Automated cleanup of outdated data
-
 ## Documentation
 
 - [Resources & References](docs/resources.md) - Tools, data sources, APIs, and documentation
 - [Sunshine Calculation Pipeline](docs/sunshine_calculation_pipeline.md) - Detailed precomputation workflow
 
 ## License
-
-TBD
-
-## Contributors
 
 TBD
 
