@@ -1,0 +1,55 @@
+# Local Development Environment
+# Does not include Traefik - API accessible directly on localhost:8000
+
+version: '3.8'
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg14-latest
+    container_name: sonnenbankerl-postgres-dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sonnenbankerl}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: sonnenbankerl-api-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-sonnenbankerl}
+      GEOSPHERE_API_KEY: ${GEOSPHERE_API_KEY:-your_key_here}
+      ENVIRONMENT: development
+      API_PORT: 8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - internal
+    restart: unless-stopped
+    volumes:
+      - ../../backend/app:/app/app  # Hot reload for development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+    driver: local

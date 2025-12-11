@@ -92,8 +92,10 @@ PostgreSQL + PostGIS + TimescaleDB
 
 ## Documentation
 
-- [Resources & References](docs/resources.md) - Tools, data sources, APIs, and documentation
+- [Repository Structure](docs/repository_structure.md) - Monorepo organization and development workflow
+- [Backend Architecture](docs/architecture.md) - Infrastructure and deployment design
 - [Sunshine Calculation Pipeline](docs/sunshine_calculation_pipeline.md) - Detailed precomputation workflow
+- [Resources & References](docs/resources.md) - Tools, data sources, APIs, and documentation
 
 ## License
 
