@@ -1,0 +1,164 @@
+import logging
+from typing import List, Optional
+from datetime import datetime
+
+from app.db.connection import get_pool
+
+logger = logging.getLogger(__name__)
+
+
+async def get_benches_within_radius(lat: float, lon: float, radius: float) -> List[dict]:
+    """
+    Get benches within radius of a location
+    
+    Args:
+        lat: Latitude
+        lon: Longitude
+        radius: Search radius in meters
+        
+    Returns:
+        List of bench dictionaries with distance
+    """
+    pool = await get_pool()
+    
+    query = """
+        SELECT 
+            b.id,
+            b.osm_id,
+            b.name,
+            ST_Y(b.geom::geometry) as lat,
+            ST_X(b.geom::geometry) as lon,
+            b.elevation,
+            ST_Distance(b.geom, ST_SetSRID(ST_MakePoint($2, $1), 4326)) as distance
+        FROM benches b
+        WHERE ST_DWithin(b.geom, ST_SetSRID(ST_MakePoint($2, $1), 4326), $3)
+        ORDER BY distance;
+    """
+    
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, lat, lon, radius)
+            return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Error querying benches: {e}")
+        raise
+
+
+async def get_bench_by_id(bench_id: int) -> Optional[dict]:
+    """
+    Get bench by ID
+    
+    Args:
+        bench_id: Bench ID
+        
+    Returns:
+        Bench dictionary or None if not found
+    """
+    pool = await get_pool()
+    
+    query = """
+        SELECT 
+            id,
+            osm_id,
+            name,
+            ST_Y(geom::geometry) as lat,
+            ST_X(geom::geometry) as lon,
+            elevation,
+            created_at
+        FROM benches
+        WHERE id = $1;
+    """
+    
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, bench_id)
+            return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Error querying bench {bench_id}: {e}")
+        raise
+
+
+async def get_current_exposure(bench_id: int, current_time: datetime) -> Optional[bool]:
+    """
+    Get current sun exposure status for a bench
+    
+    Args:
+        bench_id: Bench ID
+        current_time: Current timestamp (rounded to 10-min interval)
+        
+    Returns:
+        True if exposed to sun, False if shaded, None if no data
+    """
+    pool = await get_pool()
+    
+    query = """
+        SELECT e.exposed
+        FROM exposure e
+        JOIN timestamps t ON t.id = e.ts_id
+        WHERE e.bench_id = $1
+        AND t.ts = $2
+        LIMIT 1;
+    """
+    
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, bench_id, current_time)
+            return row['exposed'] if row else None
+    except Exception as e:
+        logger.error(f"Error querying exposure for bench {bench_id}: {e}")
+        raise
+
+
+async def get_next_sun_change(bench_id: int, current_time: datetime, current_status: bool) -> Optional[datetime]:
+    """
+    Get next time when sun status changes
+    
+    Args:
+        bench_id: Bench ID
+        current_time: Current timestamp
+        current_status: Current exposure status (True=sunny, False=shady)
+        
+    Returns:
+        Timestamp of next change, or None if no change found
+    """
+    pool = await get_pool()
+    
+    # If currently sunny, find next shady time
+    # If currently shady, find next sunny time
+    target_status = not current_status
+    
+    query = """
+        SELECT t.ts
+        FROM exposure e
+        JOIN timestamps t ON t.id = e.ts_id
+        WHERE e.bench_id = $1
+        AND t.ts > $2
+        AND e.exposed = $3
+        ORDER BY t.ts
+        LIMIT 1;
+    """
+    
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, bench_id, current_time, target_status)
+            return row['ts'] if row else None
+    except Exception as e:
+        logger.error(f"Error querying next sun change for bench {bench_id}: {e}")
+        raise
+
+
+async def check_database_health() -> bool:
+    """
+    Check if database connection is healthy
+    
+    Returns:
+        True if database is accessible, False otherwise
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.fetchval("SELECT 1")
+            return result == 1
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return False

@@ -2,53 +2,35 @@
 
 PostgreSQL database with PostGIS and TimescaleDB extensions for spatial and time-series data.
 
+## Status: ✅ Deployed
+
+- **Database**: PostgreSQL 14
+- **Extensions**: PostGIS, TimescaleDB
+- **Access**: `localhost:5435` from VPS
+- **Sample Data**: 3 benches, 7 days of exposure data
+
 ## Structure
 
 ```
 database/
-├── migrations/               # SQL migration files
-│   ├── 001_initial_schema.sql
-│   ├── 002_create_indexes.sql
-│   └── 003_timescaledb_setup.sql
-└── seed/                    # Test/development data
-    └── sample_benches.sql
+└── migrations/                    # SQL migration files (run automatically)
+    ├── 001_initial_schema.sql     # Core tables and extensions
+    ├── 002_create_indexes.sql     # Performance indexes
+    └── 003_sample_data.sql        # Sample benches and exposure data
 ```
 
-## Setup
+## Automatic Migration
 
-### Prerequisites
-- PostgreSQL 14+
-- PostGIS extension
-- TimescaleDB extension
+Migrations run automatically when the database container starts for the first time via Docker's `docker-entrypoint-initdb.d` mechanism.
 
-### Installation
+**Manual migration (if needed):**
 
 ```bash
-# Install PostgreSQL and extensions (Ubuntu/Debian)
-sudo apt install postgresql postgresql-contrib postgis timescaledb-postgresql-14
+# Connect to running container
+docker-compose exec postgres psql -U postgres -d sonnenbankerl
 
-# Create database
-sudo -u postgres createdb sonnenbankerl
-
-# Enable extensions
-psql -d sonnenbankerl -c "CREATE EXTENSION postgis;"
-psql -d sonnenbankerl -c "CREATE EXTENSION timescaledb;"
-```
-
-### Run Migrations
-
-```bash
-# Run migrations in order
-psql -d sonnenbankerl -f migrations/001_initial_schema.sql
-psql -d sonnenbankerl -f migrations/002_create_indexes.sql
-psql -d sonnenbankerl -f migrations/003_timescaledb_setup.sql
-```
-
-### Load Sample Data
-
-```bash
-# For development/testing
-psql -d sonnenbankerl -f seed/sample_benches.sql
+# Or run specific migration
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /docker-entrypoint-initdb.d/001_initial_schema.sql
 ```
 
 ## Schema Overview
@@ -73,28 +55,46 @@ psql -d sonnenbankerl -f seed/sample_benches.sql
 - Partitioned by time (monthly chunks)
 - Primary data table for API queries
 
-**dsm_raster** / **dem_raster**
-- Digital Surface Model and Digital Elevation Model
-- PostGIS raster type
-- Used for line-of-sight calculations
+## Sample Data
+
+The initial deployment includes:
+- **3 benches** in Graz Stadtpark area
+- **~1,008 timestamps** (7 days, 10-minute intervals)
+- **~3,000 exposure records** (simplified sunny hours: 8 AM - 6 PM)
+
+**Sample bench locations:**
+1. Bench 1: 47.0707°N, 15.4395°E (elevation 353.2m)
+2. Bench 2: 47.0715°N, 15.4405°E (elevation 354.5m)
+3. Bench 3: 47.0695°N, 15.4385°E (elevation 352.8m)
+
+## Database Access
+
+**From VPS:**
+```bash
+# Connect via psql
+psql -h localhost -p 5435 -U postgres -d sonnenbankerl
+
+# Example queries
+SELECT COUNT(*) FROM benches;
+SELECT name, ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lon FROM benches;
+```
+
+**Via Docker:**
+```bash
+# Connect to running container
+docker-compose exec postgres psql -U postgres -d sonnenbankerl
+```
 
 ## Backup & Restore
 
-### Backup
-
+**Backup:**
 ```bash
-# Full database backup
-pg_dump -U postgres sonnenbankerl | gzip > backup_$(date +%Y%m%d).sql.gz
-
-# Tables only (without rasters)
-pg_dump -U postgres -t benches -t timestamps -t sun_positions -t exposure sonnenbankerl | gzip > backup_tables.sql.gz
+docker-compose exec postgres pg_dump -U postgres sonnenbankerl | gzip > backup_$(date +%Y%m%d).sql.gz
 ```
 
-### Restore
-
+**Restore:**
 ```bash
-# Restore from backup
-gunzip < backup_20251211.sql.gz | psql -U postgres sonnenbankerl
+gunzip < backup_20251230.sql.gz | docker-compose exec -T postgres psql -U postgres sonnenbankerl
 ```
 
 ## Performance

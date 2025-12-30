@@ -27,26 +27,46 @@ Sonnenbankerl exists for a fundamentally different moment: you want to leave you
 
 The app displays benches with clear visual indicators: yellowish for sunny benches and dark-blueish for shady ones. Tapping a sunny bench shows remaining sun exposure time, while tapping a shady bench predicts the next sunny period, accounting for sun position, terrain obstacles, and weather forecasts.
 
+## Project Status
+
+### ✅ Completed
+- Backend API with FastAPI
+- PostgreSQL database with PostGIS + TimescaleDB
+- Docker deployment with Traefik integration
+- Basic API endpoints (health, benches)
+- Sample data (3 benches in Graz Stadtpark)
+
+### 🚧 In Progress
+- Mobile app development (Flutter)
+
+### 📋 Planned
+- Real OSM bench data import
+- GeoSphere Austria weather API integration
+- Actual sun position calculations (suncalc)
+- Line-of-sight algorithm with DSM data
+- Precomputation pipeline
+
 ## Features
 
-### Interactive Map
+### Interactive Map (Planned)
 - Subtle OpenStreetMap humanitarian layer background
 - Real-time user location tracking
 - Visual bench indicators (yellow for sunny, dark blue for shady)
 
-### Smart Bench Analysis
+### Smart Bench Analysis (Minimal Implementation)
 - **Sunny benches**: Display remaining sun exposure time
   ```
   until 16:53 | 3 hours 14 min
   ```
-- **Shady benches**: Predict next sunny period based on sun position, terrain obstacles, and weather forecasts
+- **Shady benches**: Predict next sunny period
   ```
   next estimated sunlight: 14.12.2025 10:12 | in 2 days 3 hours 14 min
   ```
 
-### Real-time Data
-- Server-side pre-calculated sun exposure profiles
-- Live weather integration for accurate predictions
+### Backend API (Live)
+- **URL**: https://sonnenbankerl.ideanexus.cloud
+- **Docs**: https://sonnenbankerl.ideanexus.cloud/docs
+- REST API for bench locations and sun exposure data
 
 ## Technical Stack
 
@@ -90,12 +110,41 @@ PostgreSQL + PostGIS + TimescaleDB
 - Fast query performance via pre-calculated profiles
 - Instant predictions without on-the-fly calculations
 
+## Quick Start
+
+### Backend API
+
+The backend is already deployed and accessible:
+
+**API URL**: https://sonnenbankerl.ideanexus.cloud
+
+**Try it:**
+```bash
+# Health check
+curl https://sonnenbankerl.ideanexus.cloud/api/health
+
+# Get benches near Graz center
+curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
+
+# Interactive docs
+open https://sonnenbankerl.ideanexus.cloud/docs
+```
+
+### Local Development
+
+See individual component READMEs:
+- [Backend Setup](backend/README.md)
+- [Database Setup](database/README.md)
+- [Mobile App](mobile/README.md)
+
 ## Documentation
 
-- [Repository Structure](docs/repository_structure.md) - Monorepo organization and development workflow
-- [Backend Architecture](docs/architecture.md) - Infrastructure and deployment design
-- [Sunshine Calculation Pipeline](docs/sunshine_calculation_pipeline.md) - Detailed precomputation workflow
-- [Resources & References](docs/resources.md) - Tools, data sources, APIs, and documentation
+- [Deployment Guide](docs/DEPLOYMENT.md) - **START HERE** for deployment
+- [Backend API](backend/README.md) - API endpoints and usage
+- [Database Schema](database/README.md) - Database structure and migrations
+- [Backend Architecture](docs/architecture.md) - Infrastructure and design
+- [Sunshine Calculation Pipeline](docs/sunshine_calculation_pipeline.md) - Precomputation workflow (planned)
+- [Resources & References](docs/resources.md) - Tools, data sources, APIs
 
 ## License
 
