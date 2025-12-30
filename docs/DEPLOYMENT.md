@@ -2,6 +2,20 @@
 
 Complete step-by-step guide for deploying the Sonnenbankerl API to your VPS.
 
+## ✅ Deployment Status
+
+**DEPLOYED & OPERATIONAL**
+
+- **URL**: https://sonnenbankerl.ideanexus.cloud
+- **Status**: Production, fully functional
+- **Deployed**: December 30, 2025
+- **Health**: https://sonnenbankerl.ideanexus.cloud/api/health
+- **Docs**: https://sonnenbankerl.ideanexus.cloud/docs
+
+**For API usage, see [API Integration Guide](API_INTEGRATION.md)**
+
+---
+
 ## Prerequisites
 
 - VPS with Traefik already configured

@@ -29,12 +29,13 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
 
 ## Project Status
 
-### ✅ Completed
-- Backend API with FastAPI
-- PostgreSQL database with PostGIS + TimescaleDB
-- Docker deployment with Traefik integration
-- Basic API endpoints (health, benches)
-- Sample data (3 benches in Graz Stadtpark)
+### ✅ Backend - DEPLOYED & LIVE
+- **API URL**: https://sonnenbankerl.ideanexus.cloud
+- **Status**: Production, fully operational
+- **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
+- **Sample Data**: 3 benches in Graz Stadtpark
+- **Endpoints**: Health check, benches search, bench details
+- **Documentation**: https://sonnenbankerl.ideanexus.cloud/docs
 
 ### 🚧 In Progress
 - Mobile app development (Flutter)
@@ -112,30 +113,44 @@ PostgreSQL + PostGIS + TimescaleDB
 
 ## Quick Start
 
-### Backend API
+### 🚀 Using the API (For Frontend Developers)
 
-The backend is already deployed and accessible:
+The backend API is **deployed and ready to use**:
 
-**API URL**: https://sonnenbankerl.ideanexus.cloud
+**Base URL**: `https://sonnenbankerl.ideanexus.cloud`
 
-**Try it:**
+**Quick Test:**
 ```bash
 # Health check
 curl https://sonnenbankerl.ideanexus.cloud/api/health
 
-# Get benches near Graz center
+# Get benches near Graz Stadtpark (47.07°N, 15.44°E)
 curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
 
-# Interactive docs
-open https://sonnenbankerl.ideanexus.cloud/docs
+# Get details for bench 1
+curl https://sonnenbankerl.ideanexus.cloud/api/benches/1
 ```
 
-### Local Development
+**Interactive API Documentation:**
+- Swagger UI: https://sonnenbankerl.ideanexus.cloud/docs
+- Try all endpoints with live data
+- See request/response schemas
 
-See individual component READMEs:
-- [Backend Setup](backend/README.md)
-- [Database Setup](database/README.md)
-- [Mobile App](mobile/README.md)
+**Available Data:**
+- 3 sample benches in Graz Stadtpark area
+- Locations: around 47.07°N, 15.44°E
+- Distance-based spatial search
+- Sun exposure data (simplified for testing)
+
+**For Flutter Integration:**
+See [Mobile App Integration Guide](mobile/README.md) for complete examples.
+
+### 🔧 Backend Development
+
+For backend developers:
+- [Backend Setup](backend/README.md) - API structure and development
+- [Database Setup](database/README.md) - Schema and migrations
+- [Deployment Guide](docs/DEPLOYMENT.md) - VPS deployment steps
 
 ## Documentation
 
