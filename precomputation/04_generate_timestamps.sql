@@ -110,14 +110,14 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to get sun hours statistics
-CREATE OR REPLACE FUNCTION get_sun_hour_stats(target_year INTEGER DEFAULT 2026) 
-RETURNS TABLE(hour_of_day INTEGER, day_count INTEGER) AS $$
+CREATE OR REPLACE FUNCTION get_sun_hour_stats(target_year INTEGER DEFAULT 2026)
+RETURNS TABLE(hour_of_day INTEGER, day_count BIGINT) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         hour_of_day,
         COUNT(DISTINCT ts::DATE) as day_count
-    FROM timestamps 
+    FROM timestamps
     WHERE EXTRACT(YEAR FROM ts) = target_year
       AND hour_of_day BETWEEN 6 AND 18  -- Typical daylight hours
     GROUP BY hour_of_day
@@ -128,23 +128,64 @@ $$ LANGUAGE plpgsql;
 -- Generate timestamps for 2026
 SELECT generate_yearly_timestamps(2026) as timestamps_generated;
 
+-- Add generated columns for performance if they don't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
+        ALTER TABLE timestamps ADD COLUMN hour_of_day INTEGER GENERATED ALWAYS AS (EXTRACT(HOUR FROM ts)) STORED;
+        RAISE NOTICE 'Added hour_of_day column';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'day_of_year') THEN
+        ALTER TABLE timestamps ADD COLUMN day_of_year INTEGER GENERATED ALWAYS AS (EXTRACT(DOY FROM ts)) STORED;
+        RAISE NOTICE 'Added day_of_year column';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'month') THEN
+        ALTER TABLE timestamps ADD COLUMN month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM ts)) STORED;
+        RAISE NOTICE 'Added month column';
+    END IF;
+
+    -- Add additional indexes if they don't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_hour') THEN
+        CREATE INDEX idx_timestamps_hour ON timestamps (hour_of_day);
+        RAISE NOTICE 'Created idx_timestamps_hour index';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_month') THEN
+        CREATE INDEX idx_timestamps_month ON timestamps (month);
+        RAISE NOTICE 'Created idx_timestamps_month index';
+    END IF;
+END $$;
+
 -- Validate generated timestamps
 SELECT validate_yearly_timestamps(2026) as validation_passed;
 
 -- Show timestamp statistics
-SELECT 
+SELECT
     EXTRACT(YEAR FROM ts) as year,
     COUNT(*) as total_timestamps,
     COUNT(DISTINCT ts::DATE) as days,
-    COUNT(DISTINCT hour_of_day) as unique_hours,
+    CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day')
+         THEN (SELECT COUNT(DISTINCT hour_of_day) FROM timestamps WHERE EXTRACT(YEAR FROM ts) = 2026)
+         ELSE NULL
+    END as unique_hours,
     MIN(ts) as first_timestamp,
     MAX(ts) as last_timestamp
-FROM timestamps 
+FROM timestamps
 WHERE EXTRACT(YEAR FROM ts) = 2026
 GROUP BY EXTRACT(YEAR FROM ts);
 
--- Show sun hours distribution
-SELECT * FROM get_sun_hour_stats(2026);
+-- Show sun hours distribution (only if columns exist)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
+        RAISE NOTICE 'Sun hours distribution:';
+        PERFORM get_sun_hour_stats(2026);
+    ELSE
+        RAISE NOTICE 'Generated columns not available - skipping sun hours distribution';
+    END IF;
+END $$;
 
 -- Grant permissions to application user
 -- Note: Using postgres superuser, no additional grants needed
