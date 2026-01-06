@@ -21,45 +21,55 @@ DECLARE
     end_time TIMESTAMPTZ;
     generated_count INTEGER := 0;
     temp_count INTEGER;
+    existing_count INTEGER;
 BEGIN
-    -- Clear existing timestamps for this year
-    DELETE FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
+    -- Check if timestamps already exist for this year
+    SELECT COUNT(*) INTO existing_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
     
-    -- Set time range for the target year (local timezone: Europe/Vienna for Graz)
-    start_time := make_timestamptz(target_year, 1, 1, 0, 0, 0, 'Europe/Vienna');
-    end_time := make_timestamptz(target_year, 12, 31, 23, 50, 0, 'Europe/Vienna');
-    
-    -- Generate 10-minute intervals for the entire year
-    INSERT INTO timestamps (ts)
-    SELECT generate_series(
-        start_time, 
-        end_time, 
-        '10 minutes'::interval
-    );
-    
-    -- Get count of generated timestamps
-    SELECT COUNT(*) INTO generated_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
-    
-    -- Add generated columns for performance if they don't exist
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
-        ALTER TABLE timestamps ADD COLUMN hour_of_day INTEGER GENERATED ALWAYS AS (EXTRACT(HOUR FROM ts)) STORED;
-    END IF;
-    
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'day_of_year') THEN
-        ALTER TABLE timestamps ADD COLUMN day_of_year INTEGER GENERATED ALWAYS AS (EXTRACT(DOY FROM ts)) STORED;
-    END IF;
-    
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'month') THEN
-        ALTER TABLE timestamps ADD COLUMN month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM ts)) STORED;
-    END IF;
-    
-    -- Add additional indexes if they don't exist
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_hour') THEN
-        CREATE INDEX idx_timestamps_hour ON timestamps (hour_of_day);
-    END IF;
-    
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_month') THEN
-        CREATE INDEX idx_timestamps_month ON timestamps (month);
+    IF existing_count = 0 THEN
+        -- No existing data - create fresh
+        -- Set time range for: target year (local timezone: Europe/Vienna for Graz)
+        start_time := make_timestamptz(target_year, 1, 1, 0, 0, 'Europe/Vienna');
+        end_time := make_timestamptz(target_year, 12, 31, 23, 50, 0, 'Europe/Vienna');
+        
+        -- Generate 10-minute intervals for: entire year
+        INSERT INTO timestamps (ts)
+        SELECT generate_series(
+            start_time, 
+            end_time, 
+            '10 minutes'::interval
+        );
+        
+        -- Get count of generated timestamps
+        SELECT COUNT(*) INTO generated_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
+        
+        -- Add generated columns for performance if they don't exist
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
+            ALTER TABLE timestamps ADD COLUMN hour_of_day INTEGER GENERATED ALWAYS AS (EXTRACT(HOUR FROM ts)) STORED;
+        END IF;
+        
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'day_of_year') THEN
+            ALTER TABLE timestamps ADD COLUMN day_of_year INTEGER GENERATED ALWAYS AS (EXTRACT(DOY FROM ts)) STORED;
+        END IF;
+        
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'month') THEN
+            ALTER TABLE timestamps ADD COLUMN month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM ts)) STORED;
+        END IF;
+        
+        -- Add additional indexes if they don't exist
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_hour') THEN
+            CREATE INDEX idx_timestamps_hour ON timestamps (hour_of_day);
+        END IF;
+        
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_month') THEN
+            CREATE INDEX idx_timestamps_month ON timestamps (month);
+        END IF;
+        
+        RAISE NOTICE 'Generated % timestamps for %', generated_count, target_year;
+    ELSE
+        -- Data already exists - report existing count
+        SELECT COUNT(*) INTO generated_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
+        RAISE NOTICE 'Found % existing timestamps for %', existing_count, target_year;
     END IF;
     
     RETURN generated_count;
