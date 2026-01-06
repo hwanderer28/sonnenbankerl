@@ -1,6 +1,9 @@
 # Custom TimescaleDB image with PostGIS support
 FROM timescale/timescaledb-ha:pg14-latest
 
+# Switch to root to install packages
+USER root
+
 # Install PostGIS and raster support
 RUN set -ex \
     && apt-get update \
@@ -10,9 +13,8 @@ RUN set -ex \
         postgis \
     && rm -rf /var/lib/apt/lists/*
 
-# Verify raster2pgsql is available
-RUN which raster2pgsql || echo "raster2pgsql not in PATH, checking /usr/lib/postgresql/14/bin" \
-    && ls -la /usr/lib/postgresql/14/bin/ | grep raster || true
-
 # Add PostgreSQL bin to PATH for easier access
 ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
+
+# Switch back to postgres user
+USER postgres
