@@ -7,16 +7,11 @@
 -- Create timestamps table (if not exists from schema migration)
 CREATE TABLE IF NOT EXISTS timestamps (
     id SERIAL PRIMARY KEY,
-    ts TIMESTAMPTZ NOT NULL UNIQUE,
-    hour_of_day INTEGER GENERATED ALWAYS AS (EXTRACT(HOUR FROM ts)) STORED,
-    day_of_year INTEGER GENERATED ALWAYS AS (EXTRACT(DOY FROM ts)) STORED,
-    month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM ts)) STORED
+    ts TIMESTAMPTZ NOT NULL UNIQUE
 );
 
--- Create index for time-based queries
+-- Add indexes for time-based queries
 CREATE INDEX IF NOT EXISTS idx_timestamps_ts ON timestamps (ts);
-CREATE INDEX IF NOT EXISTS idx_timestamps_hour ON timestamps (hour_of_day);
-CREATE INDEX IF NOT EXISTS idx_timestamps_month ON timestamps (month);
 
 -- Function to generate timestamps for a specific year
 CREATE OR REPLACE FUNCTION generate_yearly_timestamps(target_year INTEGER DEFAULT 2026) 
@@ -25,6 +20,7 @@ DECLARE
     start_time TIMESTAMPTZ;
     end_time TIMESTAMPTZ;
     generated_count INTEGER := 0;
+    temp_count INTEGER;
 BEGIN
     -- Clear existing timestamps for this year
     DELETE FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
@@ -43,6 +39,28 @@ BEGIN
     
     -- Get count of generated timestamps
     SELECT COUNT(*) INTO generated_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
+    
+    -- Add generated columns for performance if they don't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
+        ALTER TABLE timestamps ADD COLUMN hour_of_day INTEGER GENERATED ALWAYS AS (EXTRACT(HOUR FROM ts)) STORED;
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'day_of_year') THEN
+        ALTER TABLE timestamps ADD COLUMN day_of_year INTEGER GENERATED ALWAYS AS (EXTRACT(DOY FROM ts)) STORED;
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'month') THEN
+        ALTER TABLE timestamps ADD COLUMN month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM ts)) STORED;
+    END IF;
+    
+    -- Add additional indexes if they don't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_hour') THEN
+        CREATE INDEX idx_timestamps_hour ON timestamps (hour_of_day);
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_month') THEN
+        CREATE INDEX idx_timestamps_month ON timestamps (month);
+    END IF;
     
     RETURN generated_count;
 END;
