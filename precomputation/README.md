@@ -19,17 +19,68 @@ precomputation/
 ## Prerequisites
 
 - PostgreSQL 14+ with PostGIS, TimescaleDB, and suncalc_postgres extension
-- DSM/DEM raster files (GeoTIFF format)
-- Access to OpenStreetMap data
+- DSM/DEM raster files (GeoTIFF format) in `data/raw/` directory
+- Access to OpenStreetMap data (placed in `data/osm/` directory)
 - Sufficient database memory (recommended: 4GB+ shared_buffers)
 
 ## Installation
+
+### For Docker Setup (VPS Deployment)
+
+The project runs PostgreSQL in Docker with the `timescale/timescaledb-ha:pg14-latest` image, which **already includes** `raster2pgsql` and PostGIS.
+
+**Volume mounts** (already configured in `docker-compose.yml`):
+- `data/raw` → `/data/raw` (for DSM/DEM raster files)
+- `data/osm` → `/data/osm` (for OSM bench data - optional, for reference only)
+- `precomputation` → `/precomputation` (for SQL scripts)
+
+```bash
+cd infrastructure/docker
+
+# 1. Setup PostgreSQL extensions
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/01_setup_extensions.sql
+
+# 2. Import rasters using raster2pgsql (place files in data/raw/ first)
+docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | \
+  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+
+docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | \
+  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+
+# 3. Verify raster import
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/02_import_rasters.sql
+
+# 4. Import benches
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+
+# 5. Generate timestamps
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+
+# 6. Compute sun positions
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+
+# 7. Compute exposure (this takes hours/days)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/06_compute_exposure.sql
+
+# 8. Setup maintenance
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_maintenance.sql
+```
+
+### For Native PostgreSQL Installation
+
+If you have PostgreSQL installed directly on your system:
 
 ```bash
 cd precomputation
 
 # Execute setup scripts in order
 psql -d sonnenbankerl -f 01_setup_extensions.sql
+
+# Import rasters using raster2pgsql
+raster2pgsql -s 4326 -I -C -M ../data/raw/dsm_graz_1m.tif dsm_raster | psql -d sonnenbankerl
+raster2pgsql -s 4326 -I -C -M ../data/raw/dem_graz.tif dem_raster | psql -d sonnenbankerl
+
+# Continue with other scripts
 psql -d sonnenbankerl -f 02_import_rasters.sql
 psql -d sonnenbankerl -f 03_import_benches.sql
 psql -d sonnenbankerl -f 04_generate_timestamps.sql
@@ -39,14 +90,42 @@ psql -d sonnenbankerl -f 06_compute_exposure.sql
 
 ## Usage
 
-### 1. Import DSM/DEM Rasters
+### 1. Prepare Data Files
 
-```sql
--- Import Digital Surface Model (1m resolution)
--- Run from command line:
-raster2pgsql -s 4326 -I -C -M ../data/raw/dsm_graz_1m.tif dsm_raster | psql -d sonnenbankerl
-raster2pgsql -s 4326 -I -C -M ../data/raw/dem_graz.tif dem_raster | psql -d sonnenbankerl
+**On your VPS:**
+```bash
+cd /srv/docker/sonnenbankerl
+
+# Upload raster files (DSM/DEM) to data/raw/
+scp dsm_graz_1m.tif user@vps:/srv/docker/sonnenbankerl/data/raw/
+scp dem_graz.tif user@vps:/srv/docker/sonnenbankerl/data/raw/
+
+# Note: OSM bench data in data/osm/ is optional and for reference only
+# The actual bench import is handled by 03_import_benches.sql
 ```
+
+### 2. Import DSM/DEM Rasters (Docker)
+
+```bash
+cd infrastructure/docker
+
+# Import using raster2pgsql inside the container
+docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | \
+  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+
+docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | \
+  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+
+# Verify import
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT * FROM v_raster_info;"
+```
+
+**Parameter explanation:**
+- `-s 4326` - Set SRID to WGS84 (latitude/longitude)
+- `-I` - Create GIST spatial index
+- `-C` - Apply standard constraints
+- `-M` - Run VACUUM ANALYZE after import
+- `/data/raw/file.tif` - Path **inside container** (mounted from host's `data/raw/`)
 
 ### 2. Import Bench Data from OSM
 

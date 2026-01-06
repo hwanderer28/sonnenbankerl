@@ -9,6 +9,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../../database/migrations:/docker-entrypoint-initdb.d:ro
+      - ../../data/raw:/data/raw:ro  # Mount raster data (DSM/DEM files)
+      - ../../precomputation:/precomputation:ro  # Mount SQL scripts
+      # Note: data/osm is NOT mounted - bench data is imported via SQL, not file access
     ports:
       - "5435:5432"  # Expose on 5435 to avoid conflicts
     networks:
