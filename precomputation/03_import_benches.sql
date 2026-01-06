@@ -5,14 +5,13 @@
 -- and sets up the benches table with proper spatial indexing.
 
 -- Create benches table (if not exists from schema migration)
+-- Note: This matches the schema from 001_initial_schema.sql
 CREATE TABLE IF NOT EXISTS benches (
     id SERIAL PRIMARY KEY,
     osm_id BIGINT UNIQUE,
     geom GEOGRAPHY(POINT, 4326) NOT NULL,
     elevation FLOAT,
     name TEXT,
-    material TEXT,
-    backrest BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -32,13 +31,13 @@ CREATE INDEX IF NOT EXISTS idx_benches_osm_id ON benches (osm_id);
 -- out geom;
 -- -----------------------------------------------------------------------------
 
--- Sample data import (for testing)
+-- Sample data import (for testing) - only if benches don't exist yet
 -- Replace this with your actual OSM data import process
-INSERT INTO benches (osm_id, geom, name, material, backrest) VALUES 
+INSERT INTO benches (osm_id, geom, name) VALUES 
 -- Graz Stadtpark sample benches (for testing)
-(123456789, ST_SetSRID(ST_MakePoint(15.4375, 47.0732), 4326), 'Stadtpark Bench 1', 'wood', true),
-(123456790, ST_SetSRID(ST_MakePoint(15.4381, 47.0728), 4326), 'Stadtpark Bench 2', 'metal', true),
-(123456791, ST_SetSRID(ST_MakePoint(15.4369, 47.0735), 4326), 'Stadtpark Bench 3', 'wood', false)
+(123456789, ST_SetSRID(ST_MakePoint(15.4375, 47.0732), 4326), 'Stadtpark Bench 1'),
+(123456790, ST_SetSRID(ST_MakePoint(15.4381, 47.0728), 4326), 'Stadtpark Bench 2'),
+(123456791, ST_SetSRID(ST_MakePoint(15.4369, 47.0735), 4326), 'Stadtpark Bench 3')
 ON CONFLICT (osm_id) DO NOTHING;
 
 -- Function to drape benches on DEM for accurate elevation
@@ -108,17 +107,10 @@ CREATE OR REPLACE VIEW v_bench_stats AS
 SELECT 
     COUNT(*) as total_benches,
     COUNT(CASE WHEN name IS NOT NULL THEN 1 END) as named_benches,
-    COUNT(CASE WHEN material IS NOT NULL THEN 1 END) as known_material,
-    COUNT(CASE WHEN backrest = true THEN 1 END) as with_backrest,
     COUNT(CASE WHEN elevation IS NOT NULL THEN 1 END) as with_elevation,
     AVG(elevation) as avg_elevation,
     ST_AsText(ST_FlipCoordinates(ST_Centroid(ST_Collect(geom)))) as center_point
 FROM benches;
-
--- Grant permissions to application user
-GRANT SELECT, INSERT, UPDATE ON benches TO sonnenbankerl_user;
-GRANT USAGE ON SEQUENCE benches_id_seq TO sonnenbankerl_user;
-GRANT SELECT ON v_bench_stats TO sonnenbankerl_user;
 
 -- Run elevation update for existing benches
 SELECT update_bench_elevations() as benches_updated;

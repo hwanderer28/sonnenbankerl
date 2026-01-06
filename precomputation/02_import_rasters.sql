@@ -78,9 +78,9 @@ SELECT
 FROM dem_raster;
 
 -- Grant permissions to application user
-GRANT SELECT ON dsm_raster TO sonnenbankerl_user;
-GRANT SELECT ON dem_raster TO sonnenbankerl_user;
-GRANT SELECT ON v_raster_info TO sonnenbankerl_user;
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
 
 -- Sample query to test raster functionality
 CREATE OR REPLACE FUNCTION test_raster_access() RETURNS TEXT AS $$

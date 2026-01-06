@@ -200,7 +200,7 @@ SELECT * FROM validate_sun_positions();
 SELECT * FROM get_sun_position_stats(2026);
 
 -- Grant permissions to application user
-GRANT SELECT ON sun_positions TO sonnenbankerl_user;
+-- Note: Using postgres superuser, no additional grants needed
 
 DO $$
 BEGIN

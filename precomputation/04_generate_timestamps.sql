@@ -119,8 +119,8 @@ GROUP BY EXTRACT(YEAR FROM ts);
 SELECT * FROM get_sun_hour_stats(2026);
 
 -- Grant permissions to application user
-GRANT SELECT, USAGE ON SEQUENCE timestamps_id_seq TO sonnenbankerl_user;
-GRANT SELECT ON timestamps TO sonnenbankerl_user;
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
 
 DO $$
 BEGIN

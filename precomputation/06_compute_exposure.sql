@@ -216,11 +216,11 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Grant permissions to application user
-GRANT EXECUTE ON FUNCTION is_exposed TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION compute_single_bench_exposure TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION compute_all_exposure_data TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION get_exposure_computation_stats TO sonnenbankerl_user;
-GRANT INSERT ON exposure TO sonnenbankerl_user;
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
 
 -- Enable TimescaleDB compression for storage efficiency
 ALTER TABLE exposure SET (timescaledb.compress, timescaledb.compress_segmentby = 'bench_id');

@@ -6,6 +6,7 @@
 
 -- Enable core spatial extensions
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_raster;  -- Required for raster2pgsql and raster type
 CREATE EXTENSION IF NOT EXISTS postgis_topology;
 
 -- Enable TimescaleDB for time-series efficiency
@@ -33,16 +34,13 @@ ALTER SYSTEM SET random_page_cost = 1.1;  -- Optimized for SSD storage
 -- Reload configuration to apply changes
 SELECT pg_reload_conf();
 
--- Grant necessary permissions to the application user
--- Replace 'sonnenbankerl_user' with your actual database user
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO sonnenbankerl_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO sonnenbankerl_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO sonnenbankerl_user;
+-- Note: Using default 'postgres' superuser for simplicity
+-- In production, create a dedicated user with appropriate permissions
 
 -- Success message
 DO $$
 BEGIN
     RAISE NOTICE 'PostgreSQL extensions installed successfully';
-    RAISE NOTICE 'Extensions: postgis, timescaledb, suncalc_postgres, pg_stat_statements';
+    RAISE NOTICE 'Extensions: postgis, postgis_raster, timescaledb, suncalc_postgres, pg_stat_statements';
     RAISE NOTICE 'Configuration optimized for raster processing and parallel queries';
 END $$;

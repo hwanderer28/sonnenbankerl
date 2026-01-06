@@ -321,13 +321,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Grant permissions to application user
-GRANT EXECUTE ON FUNCTION incremental_update_new_benches TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION update_future_exposure TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION cleanup_old_exposure_data TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION validate_exposure_data TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION get_system_health TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION optimize_database_performance TO sonnenbankerl_user;
-GRANT EXECUTE ON FUNCTION scheduled_maintenance TO sonnenbankerl_user;
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
+-- Note: Using postgres superuser, no additional grants needed
 
 -- Display current system status
 SELECT 'System Health Report' as report_title;
