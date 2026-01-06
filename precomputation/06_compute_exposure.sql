@@ -97,10 +97,11 @@ BEGIN
         b.geom as location
     FROM benches b
     CROSS JOIN timestamps t
-    JOIN sun_positions sp ON sp.ts_id = t.id
+        JOIN sun_positions sp ON sp.ts_id = t.id
     WHERE b.id = bench_id
       AND t.ts::DATE = target_date
       AND sp.elevation_deg > 0  -- Skip nighttime
+      AND sp.elevation_deg IS NOT NULL  -- Handle missing sun positions
     ON CONFLICT (ts_id, bench_id) DO NOTHING;
     
     GET DIAGNOSTICS computed_count = ROW_COUNT;
@@ -154,6 +155,7 @@ BEGIN
         WHERE b.id BETWEEN current_min_id AND current_max_id
           AND EXTRACT(YEAR FROM t.ts) BETWEEN start_year AND end_year
           AND sp.elevation_deg > 0  -- Skip nighttime for performance
+          AND sp.elevation_deg IS NOT NULL  -- Handle missing sun positions
         ON CONFLICT (ts_id, bench_id) DO NOTHING;
         
         GET DIAGNOSTICS batch_count = ROW_COUNT;
