@@ -21,7 +21,7 @@ if psql -U postgres -d sonnenbankerl -c "SELECT 1 FROM pg_proc WHERE proname = '
     exit 0
 fi
 
-echo "📦 Installing suncalc_postgres extension..."
+echo "📦 Installing suncalc_postgres functions..."
 
 # Create temporary directory
 cd /tmp
@@ -37,6 +37,11 @@ cd suncalc_postgres
 # Load the SQL functions directly (no compilation needed)
 echo "📋 Loading SQL functions into PostgreSQL..."
 psql -U postgres -d sonnenbankerl -f suncalc/suncalc.sql
+
+# Clean up
+echo "🧹 Cleaning up..."
+cd /tmp
+rm -rf suncalc_postgres
 
 # Check if files were installed
 echo "🔍 Checking installation..."
