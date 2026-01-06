@@ -27,7 +27,7 @@ precomputation/
 
 ### For Docker Setup (VPS Deployment)
 
-The project runs PostgreSQL in Docker with the `timescale/timescaledb-ha:pg14-latest` image, which **already includes** `raster2pgsql` and PostGIS.
+The project uses a custom PostgreSQL Docker image based on TimescaleDB with PostGIS and `raster2pgsql` included.
 
 **Volume mounts** (already configured in `docker-compose.yml`):
 - `data/raw` → `/data/raw` (for DSM/DEM raster files)
@@ -37,15 +37,24 @@ The project runs PostgreSQL in Docker with the `timescale/timescaledb-ha:pg14-la
 ```bash
 cd infrastructure/docker
 
+# 0. Rebuild PostgreSQL container with PostGIS (first time only)
+docker-compose build postgres
+docker-compose up -d postgres
+
 # 1. Setup PostgreSQL extensions
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/01_setup_extensions.sql
 
 # 2. Import rasters using raster2pgsql (place files in data/raw/ first)
-docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | \
-  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+# Option A: Run inside container (recommended)
+docker-compose exec postgres bash
+# Inside container:
+raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl
+raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl
+exit
 
-docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | \
-  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+# Option B: Single command from host
+docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
+docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
 
 # 3. Verify raster import
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/02_import_rasters.sql
@@ -109,12 +118,16 @@ scp dem_graz.tif user@vps:/srv/docker/sonnenbankerl/data/raw/
 ```bash
 cd infrastructure/docker
 
-# Import using raster2pgsql inside the container
-docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | \
-  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+# Method 1: Interactive (Easiest - Recommended)
+docker-compose exec postgres bash
+# Inside container, run:
+raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl
+raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl
+exit
 
-docker-compose exec postgres raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | \
-  docker-compose exec -T postgres psql -U postgres -d sonnenbankerl
+# Method 2: Single command from host
+docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
+docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
 
 # Verify import
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT * FROM v_raster_info;"
@@ -126,6 +139,12 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT * FROM
 - `-C` - Apply standard constraints
 - `-M` - Run VACUUM ANALYZE after import
 - `/data/raw/file.tif` - Path **inside container** (mounted from host's `data/raw/`)
+
+**Note:** If `raster2pgsql: command not found`, rebuild the postgres container:
+```bash
+docker-compose build postgres
+docker-compose up -d postgres
+```
 
 ### 2. Import Bench Data from OSM
 

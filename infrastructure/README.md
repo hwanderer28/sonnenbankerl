@@ -37,8 +37,10 @@ docker-compose down
 ```
 
 **Services included:**
-- PostgreSQL with PostGIS and TimescaleDB
+- PostgreSQL 14 with PostGIS, TimescaleDB, and raster support
 - FastAPI backend
+
+**Note:** The PostgreSQL container is built from a custom Dockerfile that extends TimescaleDB with PostGIS support.
 
 ### Access Points
 

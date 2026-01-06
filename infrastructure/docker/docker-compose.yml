@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: timescale/timescaledb-ha:pg14-latest
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    image: sonnenbankerl-postgres:latest
     container_name: sonnenbankerl-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-sonnenbankerl}
