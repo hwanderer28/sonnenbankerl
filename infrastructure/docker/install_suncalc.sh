@@ -16,7 +16,7 @@ if [ "$(whoami)" != "postgres" ]; then
 fi
 
 # Check if extension already exists
-if psql -d sonnenbankerl -c "SELECT 1 FROM pg_extension WHERE extname = 'suncalc_postgres';" | grep -q 1; then
+if psql -U postgres -d sonnenbankerl -c "SELECT 1 FROM pg_extension WHERE extname = 'suncalc_postgres';" | grep -q 1; then
     echo "✅ suncalc_postgres extension is already installed"
     exit 0
 fi
@@ -36,7 +36,7 @@ cd suncalc_postgres
 
 # Compile and install
 echo "🔨 Compiling extension..."
-make clean
+# make clean  # Skip clean if it doesn't exist
 make
 
 echo "📋 Installing extension..."
@@ -59,7 +59,7 @@ ls -la /usr/share/postgresql/14/extension/ | grep suncalc || echo "No suncalc fi
 
 # Try to create the extension
 echo "🔧 Creating extension in database..."
-if psql -d sonnenbankerl -c "CREATE EXTENSION IF NOT EXISTS suncalc_postgres;"; then
+if psql -U postgres -d sonnenbankerl -c "CREATE EXTENSION IF NOT EXISTS suncalc_postgres;"; then
     echo "✅ Extension created successfully!"
 else
     echo "❌ Failed to create extension"
@@ -68,7 +68,7 @@ fi
 
 # Test the extension
 echo "🧪 Testing extension..."
-if psql -d sonnenbankerl -c "SELECT get_sunrise('2026-06-21'::date, 47.07, 15.44);" | grep -q "2026"; then
+if psql -U postgres -d sonnenbankerl -c "SELECT get_sunrise('2026-06-21'::date, 47.07, 15.44);" | grep -q "2026"; then
     echo "✅ Extension working correctly!"
     echo "Sunrise calculation test passed"
 else
