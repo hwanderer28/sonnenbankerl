@@ -47,23 +47,33 @@ DECLARE
     bench_record RECORD;
     bench_elevation FLOAT;
 BEGIN
-    -- Update bench elevations using DEM
+    -- Update bench elevations using DEM (if DEM raster exists)
     FOR bench_record IN 
         SELECT id, geom FROM benches WHERE elevation IS NULL OR elevation < 0
     LOOP
         BEGIN
-            SELECT ST_Value(rast, bench_record.geom::geometry) INTO bench_elevation
-            FROM dem_raster 
-            WHERE ST_Intersects(rast, bench_record.geom::geometry) 
-            LIMIT 1;
-            
-            IF bench_elevation IS NOT NULL THEN
+            -- Only try DEM update if raster table exists
+            BEGIN
+                SELECT ST_Value(rast, bench_record.geom::geometry) INTO bench_elevation
+                FROM dem_raster 
+                WHERE ST_Intersects(rast, bench_record.geom::geometry) 
+                LIMIT 1;
+                
+                IF bench_elevation IS NOT NULL THEN
+                    UPDATE benches 
+                        SET elevation = bench_elevation + 1.2  -- Add 1.2m for average sitting height
+                        WHERE id = bench_record.id;
+                    
+                    updated_count := updated_count + 1;
+                END IF;
+            EXCEPTION WHEN undefined_table THEN
+                -- DEM raster doesn't exist, set default elevation
                 UPDATE benches 
-                SET elevation = bench_elevation + 1.2  -- Add 1.2m for average sitting height
-                WHERE id = bench_record.id;
+                    SET elevation = 340 + 1.2  -- Average Graz elevation + sitting height
+                    WHERE id = bench_record.id AND (elevation IS NULL OR elevation < 0);
                 
                 updated_count := updated_count + 1;
-            END IF;
+            END;
         EXCEPTION WHEN OTHERS THEN
             RAISE WARNING 'Could not update elevation for bench %: %', bench_record.id, SQLERRM;
         END;
@@ -109,7 +119,7 @@ SELECT
     COUNT(CASE WHEN name IS NOT NULL THEN 1 END) as named_benches,
     COUNT(CASE WHEN elevation IS NOT NULL THEN 1 END) as with_elevation,
     AVG(elevation) as avg_elevation,
-    ST_AsText(ST_FlipCoordinates(ST_Centroid(ST_Collect(geom)))) as center_point
+    ST_AsText(ST_Centroid(ST_Collect(geom::geometry))) as center_point
 FROM benches;
 
 -- Run elevation update for existing benches
