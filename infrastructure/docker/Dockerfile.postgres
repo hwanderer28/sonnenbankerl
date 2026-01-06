@@ -1,4 +1,4 @@
-# Custom TimescaleDB image with PostGIS support
+# Custom TimescaleDB image with PostGIS and sun calculation support
 FROM timescale/timescaledb-ha:pg14-latest
 
 # Switch to root to install packages
@@ -11,7 +11,20 @@ RUN set -ex \
         postgresql-14-postgis-3 \
         postgresql-14-postgis-3-scripts \
         postgis \
+        git \
+        build-essential \
+        postgresql-server-dev-14 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install suncalc_postgres extension
+RUN set -ex \
+    && cd /tmp \
+    && git clone https://github.com/olithissen/suncalc_postgres.git \
+    && cd suncalc_postgres \
+    && make \
+    && make install \
+    && cd /tmp \
+    && rm -rf suncalc_postgres
 
 # Add PostgreSQL bin to PATH for easier access
 ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
