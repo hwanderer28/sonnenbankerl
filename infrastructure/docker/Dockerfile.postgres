@@ -16,20 +16,14 @@ RUN set -ex \
         postgresql-server-dev-14 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install suncalc_postgres extension
+# Install suncalc_postgres functions (pure PL/pgSQL, no compilation needed)
 RUN set -ex \
     && cd /tmp \
     && git clone https://github.com/olithissen/suncalc_postgres.git \
     && cd suncalc_postgres \
-    && make \
-    && make install \
-    && echo "Checking installation..." \
-    && ls -la /usr/share/postgresql/14/extension/ | grep suncalc || echo "Extension files not found in standard location" \
-    && find /usr -name "*suncalc*" 2>/dev/null || echo "No suncalc files found" \
-    && echo "Manually copying extension files if needed..." \
-    && cp -f suncalc.control /usr/share/postgresql/14/extension/ 2>/dev/null || echo "Control file copy failed" \
-    && cp -f suncalc--*.sql /usr/share/postgresql/14/extension/ 2>/dev/null || echo "SQL file copy failed" \
-    && ls -la /usr/share/postgresql/14/extension/ | grep suncalc || echo "Files still not found" \
+    && echo "Loading suncalc functions..." \
+    && psql -U postgres -d sonnenbankerl -f suncalc/suncalc.sql \
+    && echo "Functions loaded successfully" \
     && cd /tmp \
     && rm -rf suncalc_postgres
 
