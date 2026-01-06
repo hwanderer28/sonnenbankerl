@@ -19,6 +19,25 @@ CREATE TABLE IF NOT EXISTS sun_positions (
 CREATE INDEX IF NOT EXISTS idx_sun_positions_ts_id ON sun_positions (ts_id);
 CREATE INDEX IF NOT EXISTS idx_sun_positions_elevation ON sun_positions (elevation_deg) WHERE elevation_deg > 0;
 
+-- Try to install suncalc_postgres extension if available
+DO $$
+BEGIN
+    -- Check if extension is already installed
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'suncalc_postgres') THEN
+        RAISE NOTICE 'suncalc_postgres extension already installed';
+        RETURN;
+    END IF;
+
+    -- Try to create the extension
+    BEGIN
+        CREATE EXTENSION suncalc_postgres;
+        RAISE NOTICE 'suncalc_postgres extension installed successfully';
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Could not install suncalc_postgres extension: %', SQLERRM;
+        RAISE WARNING 'Will use sample sun data instead of accurate astronomical calculations';
+    END;
+END $$;
+
 -- Function to compute sun positions for a specific date range
 CREATE OR REPLACE FUNCTION compute_sun_positions(
     start_date DATE DEFAULT '2026-01-01', 

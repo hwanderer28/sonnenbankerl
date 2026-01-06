@@ -23,11 +23,22 @@ RUN set -ex \
     && cd suncalc_postgres \
     && make \
     && make install \
+    && echo "Checking installation..." \
+    && ls -la /usr/share/postgresql/14/extension/ | grep suncalc || echo "Extension files not found in standard location" \
+    && find /usr -name "*suncalc*" 2>/dev/null || echo "No suncalc files found" \
+    && echo "Manually copying extension files if needed..." \
+    && cp -f suncalc.control /usr/share/postgresql/14/extension/ 2>/dev/null || echo "Control file copy failed" \
+    && cp -f suncalc--*.sql /usr/share/postgresql/14/extension/ 2>/dev/null || echo "SQL file copy failed" \
+    && ls -la /usr/share/postgresql/14/extension/ | grep suncalc || echo "Files still not found" \
     && cd /tmp \
     && rm -rf suncalc_postgres
 
 # Add PostgreSQL bin to PATH for easier access
 ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
+
+# Copy installation script
+COPY install_suncalc.sh /usr/local/bin/install_suncalc.sh
+RUN chmod +x /usr/local/bin/install_suncalc.sh
 
 # Switch back to postgres user
 USER postgres
