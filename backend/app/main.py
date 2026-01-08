@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.config import settings
-from app.api import health, benches
+from app.api import health, benches, weather
 from app.db.connection import init_db, close_db
 
 # Configure logging
@@ -49,6 +49,7 @@ async def shutdown():
 # Include routers
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(benches.router, prefix="/api", tags=["benches"])
+app.include_router(weather.router, prefix="/api", tags=["weather"])
 
 # Root endpoint
 @app.get("/")
