@@ -1,265 +1,381 @@
-# Precomputation Pipeline for Sun Exposure Dataset
+# Weekly Sun Exposure Precomputation Pipeline
 
-This document outlines the comprehensive pipeline for precomputing binary sun exposure data for park benches in Graz, Austria. The dataset indicates whether each bench is exposed to sunlight (1) or not (0) at 10-minute intervals, based solely on sun position and terrain obstacles (DSM). No weather data is included.
+This document describes the **weekly rolling computation pipeline** for sun exposure data. Instead of precomputing a full year (52,560 timestamps), the system now computes only the current week (1,008 timestamps), regenerating fresh data on each run.
 
-## Assumptions and Scope
-- **Benches**: ~200 for initial testing (expandable to ~1000); locations from OSM; elevation = DEM + 1.2m (representing upper body/head height).
-- **Time Period**: Full year 2026 (365 days × 144 intervals/day = ~52,560 timestamps).
-- **Geographic Area**: Graz, Austria (lat/lon: 47.07°N, 15.44°E).
-- **Data Sources**:
-  - OSM: Bench locations.
-  - BEV DSM: 1m resolution for shadow calculations.
-  - BEV DEM: Ground elevations.
-- **Tools**: PostgreSQL + PostGIS + TimescaleDB + suncalc_postgres extension. Pure SQL implementation for maximum efficiency.
-- **Performance Estimate**: Initial compute ~1-7 days on multi-core server; storage ~50-500MB (compressed); queries sub-ms.
+## Key Differences from Yearly Approach
 
-## Pipeline Overview
-The pipeline is divided into setup, data preparation, precomputation, computation, and maintenance phases. It uses a pure PostgreSQL approach for maximum performance and simplicity, with TimescaleDB for time-series efficiency.
+| Aspect | Yearly (Old) | Weekly (New) |
+|--------|--------------|--------------|
+| Timestamps | 52,560 | 1,008 |
+| Records | ~2.6M | ~18,250 |
+| Runtime | Hours to days | 15-30 minutes |
+| Data retention | Full year | Rolling 7 days |
+| Updates | Every 6 months | On-demand/manual |
 
-### 1. Environment Setup
-- Install PostgreSQL with extensions:
-  ```bash
-  # Install PostgreSQL, PostGIS, TimescaleDB
-  sudo apt install postgresql postgresql-contrib postgis postgresql-*-postgis-*-scripts timescaledb-*-postgresql-*
+## Architecture
 
-  # Enable extensions in database
-  psql -d sonnenbankerl -c "CREATE EXTENSION postgis;"
-  psql -d sonnenbankerl -c "CREATE EXTENSION timescaledb;"
-  psql -d sonnenbankerl -c "CREATE EXTENSION suncalc_postgres;"  # From GitHub repo
-  ```
-- Create database: `sonnenbankerl`.
-
-### 2. Data Acquisition and Preparation
-- **Load Benches**:
-  - Query OSM for benches in Graz (e.g., via Overpass API or existing dump).
-  - Import as PostGIS table:
-    ```sql
-    CREATE TABLE benches (
-        id SERIAL PRIMARY KEY,
-        osm_id BIGINT,
-        geom GEOGRAPHY(POINT, 4326),
-        elevation FLOAT
-    );
-    -- Insert data via COPY or INSERT
-    ```
-- **Load DSM/DEM**:
-  - Download BEV DSM (1m) and DEM.
-  - Import as rasters:
-    ```bash
-    raster2pgsql -s 4326 -I -C -M dsm.tif dsm_raster | psql -d sonnenbankerl
-    raster2pgsql -s 4326 -I -C -M dem.tif dem_raster | psql -d sonnenbankerl
-    ```
-- **Drape Benches**:
-  - Set elevation to DEM + 1.2m:
-    ```sql
-    UPDATE benches SET elevation = ST_Value(dem_raster, geom::geometry) + 1.2;
-    ```
-
-### 3. Precompute Timestamps and Sun Positions
-- **Generate Timestamps**:
-  ```sql
-  CREATE TABLE timestamps (
-      id SERIAL PRIMARY KEY,
-      ts TIMESTAMPTZ NOT NULL UNIQUE
-  );
-  -- Insert 10-min intervals for 2026
-  INSERT INTO timestamps (ts)
-  SELECT generate_series('2026-01-01 00:00:00+01'::timestamptz, '2026-12-31 23:50:00+01'::timestamptz, '10 minutes'::interval);
-  ```
-- **Compute Sun Positions**:
-  ```sql
-  CREATE TABLE sun_positions (
-      ts_id INT REFERENCES timestamps(id),
-      azimuth_deg FLOAT,
-      elevation_deg FLOAT,
-      PRIMARY KEY (ts_id)
-  );
-  INSERT INTO sun_positions (ts_id, azimuth_deg, elevation_deg)
-  SELECT t.id, (sp).azimuth, (sp).altitude
-  FROM timestamps t,
-       LATERAL get_position(t.ts, 47.07, 15.44) AS sp;
-  ```
-
-### 4. Implement Pure PostgreSQL LOS Visibility Function
-- Optimized PL/pgSQL function for line-of-sight check with parallel processing:
-  ```sql
-  CREATE OR REPLACE FUNCTION is_exposed(
-      bench_geom GEOGRAPHY, 
-      azimuth FLOAT, 
-      elevation FLOAT, 
-      dsm RASTER
-  ) RETURNS BOOLEAN AS $$
-  DECLARE
-      bench_point GEOMETRY := bench_geom::geometry;
-      distance FLOAT := 1000;  -- Max ray length (m)
-      step_size FLOAT := 10;  -- Sample every 10m
-      i INT;
-      obs_z FLOAT := ST_Value(dsm, bench_point) + 1.2;  -- Bench height
-      max_z FLOAT := -9999;  -- Initialize to very low value
-      sample_point GEOMETRY;
-      sample_x FLOAT;
-      sample_y FLOAT;
-  BEGIN
-      -- Skip nighttime checks (elevation < 0)
-      IF elevation < 0 THEN
-          RETURN FALSE;
-      END IF;
-      
-      -- Sample DSM along ray to sun direction
-      FOR i IN 0..(distance / step_size)::INT LOOP
-          sample_x := ST_X(bench_point) + i * step_size * cos(radians(azimuth));
-          sample_y := ST_Y(bench_point) + i * step_size * sin(radians(azimuth));
-          sample_point := ST_MakePoint(sample_x, sample_y);
-          
-          -- Get DSM height at sample point
-          max_z := GREATEST(max_z, COALESCE(ST_Value(dsm, sample_point), -9999));
-      END LOOP;
-      
-      -- Check if direct line to sun is blocked
-      RETURN obs_z + tan(radians(elevation)) * distance > max_z;
-  END;
-  $$ LANGUAGE plpgsql PARALLEL SAFE;
-  ```
-  
-- **Performance optimizations**:
-  - Mark function as `PARALLEL SAFE` for PostgreSQL parallel query execution
-  - Skip nighttime calculations (elevation < 0)
-  - Use `COALESCE` to handle NULL DSM values
-  - Pre-tile DSM for faster raster access
-
-### 5. Batch Compute Exposure Table
-- **Create Hypertable**:
-  ```sql
-  CREATE TABLE exposure (
-      ts_id INT REFERENCES timestamps(id),
-      bench_id INT REFERENCES benches(id),
-      exposed BOOLEAN NOT NULL,
-      location GEOGRAPHY(POINT, 4326),  -- For spatial queries
-      PRIMARY KEY (ts_id, bench_id)
-  );
-  SELECT create_hypertable('exposure', 'ts_id', chunk_time_interval => INTERVAL '1 month');
-  CREATE INDEX ON exposure (bench_id, ts_id DESC);
-  CREATE INDEX ON exposure USING GIST (location);
-  ```
-- **Pure PostgreSQL Batch Computation**:
-  ```sql
-  -- Enable parallel processing for optimal performance
-  SET max_parallel_workers_per_gather = 4;
-  SET work_mem = '256MB';
-  SET shared_buffers = '1GB';
-  
-  -- Batch compute exposure data for all benches and timestamps
-  INSERT INTO exposure (ts_id, bench_id, exposed, location)
-  SELECT 
-      t.id as ts_id,
-      b.id as bench_id,
-      is_exposed(b.geom, sp.azimuth_deg, sp.elevation_deg, dsm_raster) as exposed,
-      b.geom as location
-  FROM benches b
-  CROSS JOIN timestamps t
-  JOIN sun_positions sp ON sp.ts_id = t.id
-  WHERE t.ts BETWEEN '2026-01-01 00:00:00+01'::timestamptz 
-                AND '2026-12-31 23:50:00+01'::timestamptz
-    -- Skip nighttime hours for performance (sun below horizon)
-    AND sp.elevation_deg > 0
-  -- PostgreSQL will automatically parallelize this query across available cores
-  ON CONFLICT (ts_id, bench_id) DO NOTHING;
-  
-  -- For incremental updates (new benches only):
-  INSERT INTO exposure (ts_id, bench_id, exposed, location)
-  SELECT t.id, b.id, is_exposed(b.geom, sp.azimuth_deg, sp.elevation_deg, dsm_raster), b.geom
-  FROM benches b
-  WHERE b.id > (SELECT COALESCE(MAX(bench_id), 0) FROM exposure)
-  CROSS JOIN timestamps t
-  JOIN sun_positions sp ON sp.ts_id = t.id
-  AND sp.elevation_deg > 0;
-  ```
-- Enable compression: `ALTER TABLE exposure SET (timescaledb.compress);`.
-
-### 6. Pure PostgreSQL Data Management and Maintenance
-- **Partitioning**: Monthly chunks (auto-managed by TimescaleDB).
-- **Compression**: Enable TimescaleDB compression for storage efficiency:
-  ```sql
-  ALTER TABLE exposure SET (timescaledb.compress, timescaledb.compress_segmentby = 'bench_id');
-  ```
-- **Retention**: Drop old data automatically:
-  ```sql
-  SELECT add_drop_chunks_policy('exposure', INTERVAL '1 year');
-  ```
-- **Updates**: Recalculate every 6 months using pure SQL:
-  ```sql
-  -- Recompute exposure for specific date range
-  DELETE FROM exposure 
-  WHERE ts_id IN (SELECT id FROM timestamps WHERE ts BETWEEN '2026-07-01' AND '2026-12-31');
-  
-  -- Re-insert updated data
-  INSERT INTO exposure (ts_id, bench_id, exposed, location)
-  SELECT t.id, b.id, is_exposed(b.geom, sp.azimuth_deg, sp.elevation_deg, dsm_raster), b.geom
-  FROM benches b
-  CROSS JOIN timestamps t
-  JOIN sun_positions sp ON sp.ts_id = t.id
-  WHERE t.ts BETWEEN '2026-07-01 00:00:00+01'::timestamptz 
-                AND '2026-12-31 23:50:00+01'::timestamptz
-    AND sp.elevation_deg > 0;
-  ```
-- **Monitoring**: Built-in PostgreSQL performance views:
-  ```sql
-  -- Monitor computation progress
-  SELECT COUNT(*) as total_records, 
-         COUNT(DISTINCT bench_id) as benches_processed,
-         MIN(ts) as start_time,
-         MAX(ts) as end_time
-  FROM exposure e
-  JOIN timestamps t ON t.id = e.ts_id;
-  
-  -- Check query performance
-  SELECT query, calls, total_time, mean_time 
-  FROM pg_stat_statements 
-  WHERE query LIKE '%is_exposed%' 
-  ORDER BY total_time DESC;
-  ```
-
-## Validation and Testing
-- Spot-check: Compare with known sunny/shady spots (e.g., open park vs. under trees).
-- Performance: Query `SELECT exposed FROM exposure WHERE bench_id = 1 AND ts_id = 100;`.
-- Scale: Monitor with `pg_stat_user_tables`.
-
-## Performance Advantages of Pure PostgreSQL Approach
-
-### **Benefits vs. Hybrid Python/PostgreSQL:**
-- ✅ **No data transfer overhead** - Everything stays in database memory
-- ✅ **Better parallelization** - PostgreSQL's native parallel query execution
-- ✅ **Simpler deployment** - No external Python scripts or dependencies
-- ✅ **Transaction safety** - Built-in ACID compliance and rollback capability
-- ✅ **Easier maintenance** - Single system to monitor and update
-- ✅ **Better resource utilization** - Direct memory access vs. Python round-trips
-
-### **Performance Optimizations:**
-- **Parallel query execution** - Automatic across CPU cores
-- **Spatial indexing** - Optimized raster queries with PostGIS
-- **TimescaleDB compression** - Reduced I/O and storage
-- **Memory management** - PostgreSQL's shared_buffers and work_mem tuning
-- **Batch processing** - Efficient set-based operations
-
-### **Configuration Recommendations:**
-```sql
--- PostgreSQL configuration for optimal raster performance
-ALTER SYSTEM SET max_parallel_workers_per_gather = 4;
-ALTER SYSTEM SET work_mem = '256MB';
-ALTER SYSTEM SET shared_buffers = '1GB';
-ALTER SYSTEM SET maintenance_work_mem = '512MB';
-SELECT pg_reload_conf();
+```
+Data Flow:
+Benches (50) → Timestamps (weekly) → Sun Positions → Exposure (final)
+              ↑                                           ↓
+              └────────────── Raster Data (DEM/DSM) ←─────┘
 ```
 
-### **Alternatives (if performance is insufficient):**
-- **GRASS GIS integration** - Precompute LOS rasters, import results
-- **PostgreSQL C extensions** - Custom compiled LOS functions
-- **Raster tiling strategies** - Pre-tile DSM for faster access
+### Components
 
-### **Implementation Challenges:**
-- **DSM sampling accuracy** - Balance between step_size and computation time
-- **Memory usage** - Large rasters require proper PostgreSQL configuration
-- **Computation time** - Still 1-7 days, but with better resource efficiency
+1. **Benches** (`03_import_benches.sql`)
+   - 50 park benches from OSM in Graz
+   - Elevation extracted from DEM raster (+ 1.2m sitting height)
+   - Stored as GEOGRAPHY(POINT, 4326)
 
-This pure PostgreSQL pipeline produces a highly efficient queryable dataset for the app with minimal external dependencies. For questions, refer to README.md.</content>
-<parameter name="filePath">precomputation_pipeline.md
+2. **Timestamps** (`04_generate_timestamps.sql`)
+   - Rolling 7-day window (today + 6 days)
+   - 10-minute intervals (144 per day)
+   - Stored in Europe/Vienna timezone
+
+3. **Sun Positions** (`05_compute_sun_positions.sql`)
+   - Astronomical calculations using suncalc_postgres
+   - Azimuth and elevation for each timestamp
+   - ~365 daylight positions per week
+
+4. **Exposure** (`06_compute_exposure.sql`)
+   - Line-of-sight analysis using DSM raster
+   - 50 benches × 365 daylight timestamps = ~18,250 records
+   - TRUE (sunny) or FALSE (shady)
+
+5. **Results** (`07_compute_next_week.sql`)
+   - Statistics and visualization
+   - Daily and bench-level breakdowns
+
+## Quick Start
+
+### Automated (Recommended)
+
+```bash
+# Run the complete weekly pipeline
+./compute_next_week.sh
+```
+
+### Manual Step-by-Step
+
+```bash
+cd infrastructure/docker
+
+# Step 1: Clear old data and import benches with corrected elevations
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "
+DELETE FROM exposure;
+DELETE FROM sun_positions;
+DELETE FROM timestamps;
+"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+
+# Step 2: Generate weekly timestamps
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+
+# Step 3: Compute sun positions
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+
+# Step 4: Compute exposure (15-30 minutes)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+
+# Step 5: View results
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
+```
+
+## File Structure
+
+```
+precomputation/
+├── 01_setup_extensions.sql        # Install PostGIS, TimescaleDB, suncalc_postgres
+├── 02_import_rasters.sql          # DSM/DEM raster import verification
+├── 03_import_benches.sql          # Import benches from OSM, update elevations
+├── 04_generate_timestamps.sql     # Generate rolling 7-day timestamps
+├── 05_compute_sun_positions.sql   # Compute sun positions for the week
+├── 06_compute_exposure.sql        # Line-of-sight computation (optimized)
+├── 07_compute_next_week.sql       # Results and statistics display
+└── compute_next_week.sh           # Shell script for full pipeline
+```
+
+## Core Functions
+
+### Timestamp Functions
+
+| Function | Description |
+|----------|-------------|
+| `generate_weekly_timestamps()` | Creates 7 days of 10-minute intervals |
+| `validate_weekly_timestamps()` | Validates timestamp completeness |
+| `get_timestamp_stats()` | Returns timestamp statistics |
+
+### Sun Position Functions
+
+| Function | Description |
+|----------|-------------|
+| `compute_weekly_sun_positions()` | Computes all sun positions for the week |
+| `validate_sun_positions()` | Validates sun position calculations |
+| `get_sun_position_stats()` | Returns statistics about sun positions |
+
+### Exposure Functions
+
+| Function | Description |
+|----------|-------------|
+| `is_exposed_optimized()` | Core line-of-sight function (optimized) |
+| `compute_exposure_next_days_optimized(7)` | Computes exposure for N days |
+| `compute_exposure_optimized(start, end, batch_size)` | Computes for specific date range |
+| `compute_single_bench_exposure(bench_id, date)` | Test single bench |
+| `get_exposure_computation_stats()` | Monitor computation progress |
+
+### Utility Functions
+
+| Function | Description |
+|----------|-------------|
+| `update_bench_elevations()` | Updates bench elevations from DEM |
+| `configure_performance_settings()` | Adaptive performance configuration |
+| `get_optimal_batch_size()` | Returns optimal batch size for hardware |
+
+## Configuration and Performance
+
+### Adaptive Performance Settings
+
+The pipeline automatically detects hardware and configures optimal settings:
+
+```sql
+-- Automatically applied based on CPU cores and memory:
+-- High-end machines (8+ cores): 8 workers, 1GB work_mem, batch_size=25
+-- Mid-range (4-7 cores): 4 workers, 512MB work_mem, batch_size=15
+-- Low-end/VPS: 2 workers, 256MB work_mem, batch_size=10
+```
+
+### Manual Performance Tuning
+
+For advanced users, settings can be adjusted manually:
+
+```sql
+-- Run before computation
+SET max_parallel_workers_per_gather = 8;
+SET max_parallel_workers = 8;
+SET work_mem = '1GB';
+SET parallel_tuple_cost = 0.01;
+SET parallel_setup_cost = 100;
+SET effective_cache_size = '4GB';
+SET random_page_cost = 1.1;  -- For SSD storage
+```
+
+### Key Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `distance` | 1000m | Max ray length for line-of-sight |
+| `step_size` | 10m | Sampling interval along ray |
+| `sitting_height` | 1.2m | Bench height above ground |
+| `graz_latitude` | 47.07°N | Graz city center latitude |
+| `graz_longitude` | 15.44°E | Graz city center longitude |
+
+## Expected Results
+
+### Typical Runtime
+
+| Step | Time | Description |
+|------|------|-------------|
+| Timestamps | < 1s | ~1000 records |
+| Sun Positions | < 1s | ~1000 records |
+| Exposure | 15-30 min | ~18,250 records |
+
+### Data Volume
+
+- **Weekly timestamps**: 1,008 (7 days × 144 intervals)
+- **Daylight positions**: ~365 (varies by season)
+- **Exposure records**: ~18,250 (50 benches × 365 daylight)
+- **Storage**: ~5-10MB (compressed)
+
+### Typical Results (Winter)
+
+- **Daylight hours**: ~8-9 hours per day
+- **Daylight intervals**: ~50-60 per day
+- **Sunny percentage**: 60-80% (varies by bench location)
+
+### Typical Results (Summer)
+
+- **Daylight hours**: ~15-16 hours per day
+- **Daylight intervals**: ~90-100 per day
+- **Sunny percentage**: 70-90% (varies by bench location)
+
+## Data Validation
+
+### Validation Checks
+
+After computation, verify results with:
+
+```sql
+-- Check timestamp completeness
+SELECT validate_weekly_timestamps();
+
+-- Check sun position ranges
+SELECT * FROM validate_sun_positions();
+
+-- Overall statistics
+SELECT * FROM get_exposure_computation_stats();
+
+-- Bench-level breakdown
+SELECT 
+    b.id,
+    COUNT(*) as total_hours,
+    COUNT(CASE WHEN e.exposed THEN 1 END) as sunny_hours,
+    ROUND(COUNT(CASE WHEN e.exposed THEN 1 END) * 100.0 / COUNT(*), 1) as sunny_pct
+FROM exposure e
+JOIN benches b ON e.bench_id = b.id
+GROUP BY b.id
+ORDER BY sunny_hours DESC
+LIMIT 10;
+```
+
+### Typical Validation Results
+
+```
+Completeness: PASS - Expected 1008, Got 1008
+Elevation Range: PASS - Min: -62°, Max: 19°
+Azimuth Range: PASS - Min: -150°, Max: 150°
+```
+
+## Coordinate Systems
+
+- **Benches**: EPSG:4326 (WGS84 lat/lon)
+- **Rasters (DEM/DSM)**: EPSG:3857 (Web Mercator)
+- **Transformation**: Automatic in `is_exposed_optimized()` function
+
+## Troubleshooting
+
+### Issue: "No DSM data available"
+
+**Cause**: Coordinate transformation error or bench outside raster bounds
+
+**Solution**:
+```sql
+-- Check bench coordinates
+SELECT id, ST_AsText(geom) FROM benches;
+
+-- Verify raster bounds
+SELECT ST_XMin(rast), ST_XMax(rast), ST_YMin(rast), ST_YMax(rast) FROM dsm_raster;
+```
+
+### Issue: Computation too slow
+
+**Cause**: Insufficient PostgreSQL configuration
+
+**Solution**:
+```sql
+-- Increase work memory
+SET work_mem = '1GB';
+
+-- Reduce batch size for lower memory usage
+-- Batch size is automatically optimized, but can be set manually:
+SELECT compute_exposure_optimized(CURRENT_DATE, CURRENT_DATE + 6, 10);
+```
+
+### Issue: Wrong bench elevations
+
+**Cause**: Benches not updated from DEM
+
+**Solution**:
+```sql
+-- Re-run elevation update
+SELECT update_bench_elevations();
+
+-- Verify elevations
+SELECT id, elevation FROM benches ORDER BY elevation;
+```
+
+### Issue: Timestamps not in expected range
+
+**Cause**: Old timestamps from previous computation
+
+**Solution**:
+```sql
+-- Clear and regenerate
+DELETE FROM timestamps;
+SELECT generate_weekly_timestamps();
+```
+
+## API Integration
+
+The computed exposure data is ready for API consumption:
+
+```sql
+-- Get exposure for all benches on a specific date
+SELECT * FROM exposure e
+JOIN timestamps t ON e.ts_id = t.id
+WHERE t.ts::DATE = CURRENT_DATE;
+
+-- Get sunny benches for next 6 hours
+SELECT b.id, b.geom, COUNT(*) as sunny_hours
+FROM exposure e
+JOIN benches b ON e.bench_id = b.id
+JOIN timestamps t ON e.ts_id = t.id
+WHERE e.exposed = true
+  AND t.ts BETWEEN NOW() AND NOW() + INTERVAL '6 hours'
+GROUP BY b.id, b.geom
+ORDER BY sunny_hours DESC;
+
+-- Get bench details with sun exposure
+SELECT 
+    b.id,
+    ST_X(b.geom) as lon,
+    ST_Y(b.geom) as lat,
+    b.elevation,
+    COUNT(CASE WHEN e.exposed THEN 1 END) as sunny_hours,
+    COUNT(CASE WHEN NOT e.exposed THEN 1 END) as shady_hours
+FROM benches b
+LEFT JOIN exposure e ON b.id = e.bench_id
+GROUP BY b.id;
+```
+
+## Maintenance
+
+### Clear Data for Fresh Computation
+
+```sql
+DELETE FROM exposure;
+DELETE FROM sun_positions;
+DELETE FROM timestamps;
+```
+
+### Check Disk Usage
+
+```sql
+SELECT 
+    'exposure' as table_name,
+    pg_size_pretty(pg_total_relation_size('exposure')) as size
+UNION ALL
+SELECT 
+    'dsm_raster',
+    pg_size_pretty(pg_total_relation_size('dsm_raster'));
+```
+
+### Monitor Computation Progress
+
+```sql
+-- During computation
+SELECT 
+    COUNT(*) as computed,
+    COUNT(DISTINCT bench_id) as benches_done
+FROM exposure;
+
+-- After completion
+SELECT * FROM get_exposure_computation_stats();
+```
+
+## Future Improvements
+
+- [ ] Add caching for frequently requested queries
+- [ ] Implement incremental computation (only compute changed data)
+- [ ] Add support for custom date ranges
+- [ ] Implement parallel computation across multiple days
+- [ ] Include weather data integration (cloud cover)
+- [ ] Historical data retention for trend analysis
+- [ ] Automated weekly cron job
+
+## See Also
+
+- [Precomputation README](precomputation/README.md)
+- [Backend Architecture](../docs/architecture.md)
+- [Database Schema](database/README.md)
+- [Deployment Guide](../docs/DEPLOYMENT.md)

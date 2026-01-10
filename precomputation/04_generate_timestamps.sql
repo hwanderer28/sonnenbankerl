@@ -1,8 +1,13 @@
 -- =============================================================================
--- Generate Timestamps for Computation
+-- Generate Weekly Timestamps (Rolling 7 Days)
 -- =============================================================================
--- This script creates the time intervals used for sun exposure calculations.
--- We use 10-minute intervals for a full year of data.
+-- This script creates 10-minute interval timestamps for the next 7 days
+-- from today's date. Designed for weekly rolling computation.
+--
+-- - Timestamps stored in local time (Europe/Vienna)
+-- - 10-minute intervals (144 per day)
+-- - 1008 timestamps maximum (7 days × 144 intervals)
+-- - Rolling window: always covers today + next 6 days
 
 -- Create timestamps table (if not exists from schema migration)
 CREATE TABLE IF NOT EXISTS timestamps (
@@ -13,189 +18,135 @@ CREATE TABLE IF NOT EXISTS timestamps (
 -- Add indexes for time-based queries
 CREATE INDEX IF NOT EXISTS idx_timestamps_ts ON timestamps (ts);
 
--- Function to generate timestamps for a specific year
-CREATE OR REPLACE FUNCTION generate_yearly_timestamps(target_year INTEGER DEFAULT 2026) 
-RETURNS INTEGER AS $$
+-- Function to generate timestamps for rolling week (today + 7 days)
+-- Uses local time (Europe/Vienna) for user-friendly display
+CREATE OR REPLACE FUNCTION generate_weekly_timestamps() RETURNS INTEGER AS $$
 DECLARE
     start_time TIMESTAMPTZ;
     end_time TIMESTAMPTZ;
     generated_count INTEGER := 0;
-    temp_count INTEGER;
     existing_count INTEGER;
 BEGIN
-    -- Check if timestamps already exist for this year
-    SELECT COUNT(*) INTO existing_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
-    
-    IF existing_count = 0 THEN
-        -- No existing data - create fresh
-        -- Set time range for: target year (local timezone: Europe/Vienna for Graz)
-        start_time := make_timestamptz(target_year, 1, 1, 0, 0, 'Europe/Vienna');
-        end_time := make_timestamptz(target_year, 12, 31, 23, 50, 0, 'Europe/Vienna');
-        
-        -- Generate 10-minute intervals for: entire year
-        INSERT INTO timestamps (ts)
-        SELECT generate_series(
-            start_time, 
-            end_time, 
-            '10 minutes'::interval
-        );
-        
-        -- Get count of generated timestamps
-        SELECT COUNT(*) INTO generated_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
-        
-        -- Add generated columns for performance if they don't exist
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
-            ALTER TABLE timestamps ADD COLUMN hour_of_day INTEGER GENERATED ALWAYS AS (EXTRACT(HOUR FROM ts)) STORED;
-        END IF;
-        
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'day_of_year') THEN
-            ALTER TABLE timestamps ADD COLUMN day_of_year INTEGER GENERATED ALWAYS AS (EXTRACT(DOY FROM ts)) STORED;
-        END IF;
-        
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'month') THEN
-            ALTER TABLE timestamps ADD COLUMN month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM ts)) STORED;
-        END IF;
-        
-        -- Add additional indexes if they don't exist
-        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_hour') THEN
-            CREATE INDEX idx_timestamps_hour ON timestamps (hour_of_day);
-        END IF;
-        
-        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_month') THEN
-            CREATE INDEX idx_timestamps_month ON timestamps (month);
-        END IF;
-        
-        RAISE NOTICE 'Generated % timestamps for %', generated_count, target_year;
-    ELSE
-        -- Data already exists - report existing count
-        SELECT COUNT(*) INTO generated_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
-        RAISE NOTICE 'Found % existing timestamps for %', existing_count, target_year;
+    -- Calculate time range: today 00:00 to 7 days from now 00:00
+    -- Stored as TIMESTAMPTZ (UTC internally) but represents local time
+    start_time := (CURRENT_DATE || ' 00:00:00+01')::timestamptz;
+    end_time := (CURRENT_DATE + 7)::date || ' 00:00:00+01';
+
+    -- Check existing timestamps in this range
+    existing_count := COUNT(*) FROM timestamps
+    WHERE ts >= start_time AND ts < end_time;
+
+    IF existing_count > 0 THEN
+        RAISE NOTICE 'Found % existing timestamps in weekly range (%)', existing_count, CURRENT_DATE;
+        RAISE NOTICE 'Clearing old timestamps to regenerate with fresh data...';
+        DELETE FROM timestamps WHERE ts >= start_time AND ts < end_time;
     END IF;
-    
+
+    -- Generate 10-minute intervals for 7 days
+    INSERT INTO timestamps (ts)
+    SELECT generate_series(
+        start_time,
+        end_time - INTERVAL '10 minutes',  -- Exclude the endpoint
+        '10 minutes'::interval
+    );
+
+    GET DIAGNOSTICS generated_count = ROW_COUNT;
+
+    RAISE NOTICE 'Generated % timestamps for % to %',
+                 generated_count,
+                 start_time::date,
+                 (end_time - INTERVAL '1 day')::date;
+
     RETURN generated_count;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Function to validate timestamp completeness
-CREATE OR REPLACE FUNCTION validate_yearly_timestamps(target_year INTEGER DEFAULT 2026) 
-RETURNS BOOLEAN AS $$
+CREATE OR REPLACE FUNCTION validate_weekly_timestamps() RETURNS BOOLEAN AS $$
 DECLARE
-    expected_count INTEGER := 365 * 144;  -- 144 intervals per day (24 * 6)
+    expected_count INTEGER := 7 * 144;  -- 7 days × 144 intervals per day
     actual_count INTEGER;
     start_date DATE;
     end_date DATE;
-    missing_hours TEXT := '';
 BEGIN
     -- Count actual timestamps
-    SELECT COUNT(*) INTO actual_count FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
-    
-    -- Check for gaps in the timeline
-    SELECT MIN(ts::DATE), MAX(ts::DATE) INTO start_date, end_date 
-    FROM timestamps WHERE EXTRACT(YEAR FROM ts) = target_year;
-    
-    -- Generate report
+    SELECT COUNT(*) INTO actual_count FROM timestamps
+    WHERE ts >= (CURRENT_DATE || ' 00:00:00+01')::timestamptz
+      AND ts < (CURRENT_DATE + 7)::date || ' 00:00:00+01'::timestamptz;
+
+    -- Get date range
+    SELECT MIN(ts)::DATE, MAX(ts)::DATE INTO start_date, end_date
+    FROM timestamps
+    WHERE ts >= (CURRENT_DATE || ' 00:00:00+01')::timestamptz
+      AND ts < (CURRENT_DATE + 7)::date || ' 00:00:00+01'::timestamptz;
+
+    -- Validate
     IF actual_count != expected_count THEN
         RAISE WARNING 'Timestamp count mismatch: expected %, got %', expected_count, actual_count;
         RETURN FALSE;
     END IF;
-    
-    -- Check for gaps (simplified check)
-    IF end_date - start_date != 364 THEN  -- Should be full year
+
+    IF end_date - start_date != 6 THEN  -- Should cover 7 days (start to start+6)
         RAISE WARNING 'Date range incomplete: % to %', start_date, end_date;
         RETURN FALSE;
     END IF;
-    
+
+    RAISE NOTICE 'Timestamp validation passed: % timestamps from % to %',
+                 actual_count, start_date, end_date;
+
     RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get sun hours statistics
-CREATE OR REPLACE FUNCTION get_sun_hour_stats(target_year INTEGER DEFAULT 2026)
-RETURNS TABLE(hour_of_day INTEGER, day_count BIGINT) AS $$
+-- Function to get timestamp statistics
+CREATE OR REPLACE FUNCTION get_timestamp_stats() RETURNS TABLE(
+    metric_name TEXT,
+    metric_value TEXT
+) AS $$
 BEGIN
     RETURN QUERY
-    SELECT
-        hour_of_day,
-        COUNT(DISTINCT ts::DATE) as day_count
+    SELECT 'Total Timestamps' as metric_name, COUNT(*)::text FROM timestamps
+    UNION ALL
+    SELECT 'Date Range', MIN(ts)::date || ' to ' || MAX(ts)::date
     FROM timestamps
-    WHERE EXTRACT(YEAR FROM ts) = target_year
-      AND hour_of_day BETWEEN 6 AND 18  -- Typical daylight hours
-    GROUP BY hour_of_day
-    ORDER BY hour_of_day;
+    UNION ALL
+    SELECT 'Days Covered', (MAX(ts)::date - MIN(ts)::date + 1)::text
+    FROM timestamps
+    UNION ALL
+    SELECT 'Timezone', 'Europe/Vienna (+01:00/+02:00)'
+    FROM timestamps
+    LIMIT 1;
 END;
 $$ LANGUAGE plpgsql;
 
--- Generate timestamps for 2026
-SELECT generate_yearly_timestamps(2026) as timestamps_generated;
-
--- Add generated columns for performance if they don't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
-        ALTER TABLE timestamps ADD COLUMN hour_of_day INTEGER GENERATED ALWAYS AS (EXTRACT(HOUR FROM ts)) STORED;
-        RAISE NOTICE 'Added hour_of_day column';
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'day_of_year') THEN
-        ALTER TABLE timestamps ADD COLUMN day_of_year INTEGER GENERATED ALWAYS AS (EXTRACT(DOY FROM ts)) STORED;
-        RAISE NOTICE 'Added day_of_year column';
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'month') THEN
-        ALTER TABLE timestamps ADD COLUMN month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM ts)) STORED;
-        RAISE NOTICE 'Added month column';
-    END IF;
-
-    -- Add additional indexes if they don't exist
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_hour') THEN
-        CREATE INDEX idx_timestamps_hour ON timestamps (hour_of_day);
-        RAISE NOTICE 'Created idx_timestamps_hour index';
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexrelname = 'idx_timestamps_month') THEN
-        CREATE INDEX idx_timestamps_month ON timestamps (month);
-        RAISE NOTICE 'Created idx_timestamps_month index';
-    END IF;
-END $$;
+-- Generate weekly timestamps
+SELECT generate_weekly_timestamps() as timestamps_generated;
 
 -- Validate generated timestamps
-SELECT validate_yearly_timestamps(2026) as validation_passed;
+SELECT validate_weekly_timestamps() as validation_passed;
 
 -- Show timestamp statistics
+SELECT * FROM get_timestamp_stats();
+
+-- Display sample timestamps
 SELECT
-    EXTRACT(YEAR FROM ts) as year,
-    COUNT(*) as total_timestamps,
-    COUNT(DISTINCT ts::DATE) as days,
-    CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day')
-         THEN (SELECT COUNT(DISTINCT hour_of_day) FROM timestamps WHERE EXTRACT(YEAR FROM ts) = 2026)
-         ELSE NULL
-    END as unique_hours,
-    MIN(ts) as first_timestamp,
-    MAX(ts) as last_timestamp
+    ts::date as date,
+    COUNT(*) as intervals,
+    MIN(ts)::time as first_time,
+    MAX(ts)::time as last_time
 FROM timestamps
-WHERE EXTRACT(YEAR FROM ts) = 2026
-GROUP BY EXTRACT(YEAR FROM ts);
-
--- Show sun hours distribution (only if columns exist)
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'timestamps' AND column_name = 'hour_of_day') THEN
-        RAISE NOTICE 'Sun hours distribution:';
-        PERFORM get_sun_hour_stats(2026);
-    ELSE
-        RAISE NOTICE 'Generated columns not available - skipping sun hours distribution';
-    END IF;
-END $$;
-
--- Grant permissions to application user
--- Note: Using postgres superuser, no additional grants needed
--- Note: Using postgres superuser, no additional grants needed
+GROUP BY ts::date
+ORDER BY ts::date;
 
 DO $$
 BEGIN
-    RAISE NOTICE 'Timestamp generation completed for 2026';
-    RAISE NOTICE 'Total timestamps: % (expected: %)', 
-                 (SELECT COUNT(*) FROM timestamps WHERE EXTRACT(YEAR FROM ts) = 2026), 
-                 365 * 144;
-    RAISE NOTICE 'Timestamp validation: %', (SELECT validate_yearly_timestamps(2026));
+    RAISE NOTICE '======================================';
+    RAISE NOTICE 'Weekly timestamp generation complete!';
+    RAISE NOTICE 'Generated for: % to %',
+                 (CURRENT_DATE),
+                 (CURRENT_DATE + 6);
+    RAISE NOTICE 'Total intervals: % (expected: 1008)',
+                 (SELECT COUNT(*) FROM timestamps);
+    RAISE NOTICE 'Next run will regenerate fresh timestamps';
+    RAISE NOTICE '======================================';
 END $$;

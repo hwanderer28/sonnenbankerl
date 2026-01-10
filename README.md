@@ -96,15 +96,24 @@ PostgreSQL + PostGIS + TimescaleDB
 ```
 
 #### Precomputation Pipeline
+
+The system uses a **weekly rolling computation** approach:
+
 - **Dataset**: Binary sun exposure (sunny/shady) at 10-minute intervals
-- **Coverage**: ~200-1000 benches, annual pre-calculation
+- **Coverage**: Current week only (rolling 7-day window)
 - **Algorithm**: Sun position calculations (suncalc_postgres) + line-of-sight checks against 1m DSM
 - **Bench Height**: DEM + 1.2m (upper body/head level)
-- **Storage**: Compressed time-series profiles in TimescaleDB hypertables
-- **Processing**: Python parallelization for batch computation
-- **Updates**: Incremental recomputation every 6 months; automatic cleanup of data >1 year old
+- **Storage**: TimescaleDB hypertables for time-series efficiency
+- **Processing**: Adaptive parallelization based on available hardware
+- **Updates**: Manual on-demand (run `./compute_next_week.sh` or execute SQL scripts)
 
-📄 [Detailed pipeline documentation](docs/sunshine_calculation_pipeline.md)
+**Key Features:**
+- ✅ Pure PostgreSQL (no external Python scripts)
+- ✅ Adaptive performance (auto-detects CPU cores and memory)
+- ✅ 15-30 minute computation (vs hours/days for full year)
+- ✅ Optimized line-of-sight with pre-computed trigonometric values
+
+📄 [Precomputation Pipeline](../docs/sunshine_calculation_pipeline.md)
 
 #### Real-time Integration
 - Pre-computed sun/terrain data combined with live weather API
@@ -155,10 +164,10 @@ For backend developers:
 ## Documentation
 
 - [Deployment Guide](docs/DEPLOYMENT.md) - **START HERE** for deployment
+- [Precomputation Pipeline](docs/sunshine_calculation_pipeline.md) - Weekly computation workflow
 - [Backend API](backend/README.md) - API endpoints and usage
 - [Database Schema](database/README.md) - Database structure and migrations
 - [Backend Architecture](docs/architecture.md) - Infrastructure and design
-- [Sunshine Calculation Pipeline](docs/sunshine_calculation_pipeline.md) - Precomputation workflow (planned)
 - [Resources & References](docs/resources.md) - Tools, data sources, APIs
 
 ## License

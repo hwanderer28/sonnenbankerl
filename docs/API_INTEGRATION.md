@@ -615,4 +615,3 @@ class ApiService {
 **For Flutter integration help:**
 - See usage examples above
 - Check mobile app README
-- Review sample code in test_api.py

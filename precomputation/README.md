@@ -1,354 +1,348 @@
-# Pure PostgreSQL Precomputation
+# Precomputation Pipeline
 
-This directory contains SQL scripts and documentation for sun exposure data precomputation using pure PostgreSQL. No external Python scripts are required.
+This directory contains SQL scripts and documentation for the **weekly rolling sun exposure computation** using pure PostgreSQL. No external Python scripts are required.
+
+## Quick Start
+
+```bash
+# Run the complete weekly pipeline
+cd infrastructure/docker
+./compute_next_week.sh
+```
+
+Or manually:
+
+```bash
+cd infrastructure/docker
+
+# Clear old data
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "
+DELETE FROM exposure;
+DELETE FROM sun_positions;
+DELETE FROM timestamps;
+"
+
+# Run pipeline steps
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
+```
 
 ## Structure
 
 ```
 precomputation/
-├── 01_setup_extensions.sql      # Install required PostgreSQL extensions
-├── 02_import_rasters.sql        # DSM/DEM raster import commands
-├── 03_import_benches.sql        # OSM bench data import
-├── 04_generate_timestamps.sql   # Create time intervals for computation
-├── 05_compute_sun_positions.sql # Precompute sun positions
-├── 06_compute_exposure.sql      # Main exposure computation
-├── 07_maintenance.sql           # Ongoing maintenance procedures
-└── README.md                    # This file
+├── 01_setup_extensions.sql          # Install PostgreSQL extensions
+├── 02_import_rasters.sql            # DSM/DEM raster import verification
+├── 03_import_benches.sql            # Import benches from OSM, update elevations
+├── 04_generate_timestamps.sql       # Generate rolling 7-day timestamps
+├── 05_compute_sun_positions.sql     # Compute sun positions for the week
+├── 06_compute_exposure.sql          # Line-of-sight computation (optimized)
+├── 07_compute_next_week.sql         # Results and statistics display
+├── 08_qgis_tables.sql               # QGIS visualization tables
+└── README.md                        # This file
+precomputation/
+├── 01_setup_extensions.sql          # Install PostgreSQL extensions
+├── 02_import_rasters.sql            # DSM/DEM raster import verification
+├── 03_import_benches.sql            # Import benches from OSM, update elevations
+├── 04_generate_timestamps.sql       # Generate rolling 7-day timestamps
+├── 05_compute_sun_positions.sql     # Compute sun positions for the week
+├── 06_compute_exposure.sql          # Line-of-sight computation (optimized)
+├── 07_compute_next_week.sql         # Results and statistics display
+├── compute_next_week.sh             # Shell script for full pipeline
+└── README.md                        # This file
 ```
 
 ## Prerequisites
 
 - PostgreSQL 14+ with PostGIS, TimescaleDB, and suncalc_postgres extension
 - DSM/DEM raster files (GeoTIFF format) in `data/raw/` directory
-- Access to OpenStreetMap data (placed in `data/osm/` directory)
-- Sufficient database memory (recommended: 4GB+ shared_buffers)
+- OSM bench data in `data/osm/` directory (for reference)
+- Recommended: 4GB+ database memory for optimal performance
 
-## Installation
+## Installation (Docker)
 
-### For Docker Setup (VPS Deployment)
-
-The project uses a custom PostgreSQL Docker image based on TimescaleDB with PostGIS and `raster2pgsql` included.
-
-**Volume mounts** (already configured in `docker-compose.yml`):
-- `data/raw` → `/data/raw` (for DSM/DEM raster files)
-- `data/osm` → `/data/osm` (for OSM bench data - optional, for reference only)
-- `precomputation` → `/precomputation` (for SQL scripts)
+### First Time Setup
 
 ```bash
 cd infrastructure/docker
 
-# 0. Rebuild PostgreSQL container with PostGIS (first time only)
+# Rebuild PostgreSQL container with extensions
 docker-compose build postgres
 docker-compose up -d postgres
 
-# 1. Setup PostgreSQL extensions
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/01_setup_extensions.sql
-
-# 2. Import rasters using raster2pgsql (place files in data/raw/ first)
-# Option A: Run inside container (recommended)
-docker-compose exec postgres bash
-# Inside container:
-raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl
-raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl
-exit
-
-# Option B: Single command from host
-docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
-docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
-
-# 3. Verify raster import
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/02_import_rasters.sql
-
-# 4. Import benches
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
-
-# 5. Generate timestamps
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
-
-# 6. Compute sun positions
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
-
-# 7. Compute exposure (this takes hours/days)
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/06_compute_exposure.sql
-
-# 8. Setup maintenance
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_maintenance.sql
+# Wait for container to be ready
+sleep 5
 ```
 
-### For Native PostgreSQL Installation
-
-If you have PostgreSQL installed directly on your system:
+### Import Data
 
 ```bash
-cd precomputation
+# Verify and import rasters
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/02_import_rasters.sql
 
-# Execute setup scripts in order
-psql -d sonnenbankerl -f 01_setup_extensions.sql
+# Import benches (includes elevation update from DEM)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+```
 
-# Import rasters using raster2pgsql
-raster2pgsql -s 4326 -I -C -M ../data/raw/dsm_graz_1m.tif dsm_raster | psql -d sonnenbankerl
-raster2pgsql -s 4326 -I -C -M ../data/raw/dem_graz.tif dem_raster | psql -d sonnenbankerl
+### Run Precomputation
 
-# Continue with other scripts
-psql -d sonnenbankerl -f 02_import_rasters.sql
-psql -d sonnenbankerl -f 03_import_benches.sql
-psql -d sonnenbankerl -f 04_generate_timestamps.sql
-psql -d sonnenbankerl -f 05_compute_sun_positions.sql
-psql -d sonnenbankerl -f 06_compute_exposure.sql
+```bash
+# Generate timestamps for current week
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+
+# Compute sun positions
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+
+# Compute exposure (15-30 minutes)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+
+# View results
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
 ```
 
 ## Usage
 
-### 1. Prepare Data Files
-
-**On your VPS:**
-```bash
-cd /srv/docker/sonnenbankerl
-
-# Upload raster files (DSM/DEM) to data/raw/
-scp dsm_graz_1m.tif user@vps:/srv/docker/sonnenbankerl/data/raw/
-scp dem_graz.tif user@vps:/srv/docker/sonnenbankerl/data/raw/
-
-# Note: OSM bench data in data/osm/ is optional and for reference only
-# The actual bench import is handled by 03_import_benches.sql
-```
-
-### 2. Import DSM/DEM Rasters (Docker)
-
-```bash
-cd infrastructure/docker
-
-# Method 1: Interactive (Easiest - Recommended)
-docker-compose exec postgres bash
-# Inside container, run:
-raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl
-raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl
-exit
-
-# Method 2: Single command from host
-docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
-docker-compose exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
-
-# Verify import
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT * FROM v_raster_info;"
-```
-
-**Parameter explanation:**
-- `-s 4326` - Set SRID to WGS84 (latitude/longitude)
-- `-I` - Create GIST spatial index
-- `-C` - Apply standard constraints
-- `-M` - Run VACUUM ANALYZE after import
-- `/data/raw/file.tif` - Path **inside container** (mounted from host's `data/raw/`)
-
-**Note:** If `raster2pgsql: command not found`, rebuild the postgres container:
-```bash
-docker-compose build postgres
-docker-compose up -d postgres
-```
-
-### 2. Import Bench Data from OSM
+### Available Functions
 
 ```sql
--- Download and import benches from OpenStreetMap
--- See 03_import_benches.sql for complete import procedure
+-- Generate fresh timestamps for the week
+SELECT generate_weekly_timestamps();
+
+-- Compute sun positions for the week
+SELECT compute_weekly_sun_positions();
+
+-- Compute exposure for next 7 days (recommended)
+SELECT compute_exposure_next_days_optimized(7);
+
+-- Compute exposure for specific date range
+SELECT compute_exposure_optimized('2026-01-10', '2026-01-16', 25);
+
+-- Test single bench on a specific date
+SELECT compute_single_bench_exposure(7, CURRENT_DATE);
+
+-- Monitor progress
+SELECT * FROM get_exposure_computation_stats();
+
+-- View bench statistics
+SELECT * FROM v_bench_stats;
 ```
 
-### 3. Run Precomputation
+### View Results
 
 ```sql
--- Full computation for a year (takes hours/days)
--- Configure PostgreSQL for optimal performance first:
-SET max_parallel_workers_per_gather = 4;
-SET work_mem = '256MB';
+-- Overall statistics
+SELECT * FROM get_exposure_computation_stats();
 
--- Execute main computation (see 06_compute_exposure.sql)
--- This will automatically parallelize across available CPU cores
-```
-
-### Performance Configuration
-
-**PostgreSQL settings for optimal performance:**
-```sql
--- Set these in postgresql.conf or per-session:
-ALTER SYSTEM SET max_parallel_workers_per_gather = 4;
-ALTER SYSTEM SET work_mem = '256MB';
-ALTER SYSTEM SET shared_buffers = '1GB';
-ALTER SYSTEM SET maintenance_work_mem = '512MB';
-SELECT pg_reload_conf();
-```
-
-## Algorithm Overview
-
-### Pure PostgreSQL Line-of-Sight (LOS) Calculation
-
-The `is_exposed()` function performs:
-1. Sun position calculation using suncalc_postgres extension
-2. 3D ray computation from bench to sun direction
-3. DSM sampling along ray at 10m intervals
-4. Obstacle detection using PostGIS raster functions
-5. Binary result storage (exposed/not exposed)
-
-### Performance
-
-**Processing time estimates:**
-- 200 benches × 52,560 timestamps: ~1-3 days (4 parallel workers)
-- 1000 benches × 52,560 timestamps: ~5-7 days (4 parallel workers)
-
-**Pure PostgreSQL advantages:**
-- ✅ No data transfer overhead (everything stays in database)
-- ✅ Native parallel query execution across CPU cores
-- ✅ Efficient memory usage with PostgreSQL buffers
-- ✅ Transaction safety and automatic rollback on errors
-- ✅ Built-in query optimization and spatial indexing
-
-**Optimization strategies:**
-- PostgreSQL parallel query execution
-- Spatial indexing for DSM queries
-- TimescaleDB compression for storage efficiency
-- Skip nighttime hours (sun elevation < 0°)
-- Efficient set-based operations (no row-by-row processing)
-
-## Scheduled Updates
-
-For automated updates, use PostgreSQL pg_cron extension or system cron:
-
-```bash
-# Using system cron to run SQL scripts
-crontab -e
-
-# Run incremental update every 6 months (Jan 1 and Jul 1 at 2 AM)
-0 2 1 1,7 * psql -d sonnenbankerl -f 07_maintenance.sql >> /var/log/sonnenbankerl/precompute.log 2>&1
-```
-
-**Or using PostgreSQL pg_cron extension:**
-```sql
--- Enable pg_cron extension
-CREATE EXTENSION pg_cron;
-
--- Schedule incremental updates every 6 months
-SELECT cron.schedule(
-    'sun-exposure-update',
-    '0 2 1 1,7',
-    $$
-    -- Incremental update logic from 07_maintenance.sql
-    INSERT INTO exposure (ts_id, bench_id, exposed, location)
-    SELECT t.id, b.id, is_exposed(b.geom, sp.azimuth_deg, sp.elevation_deg, dsm_raster), b.geom
-    FROM benches b
-    CROSS JOIN timestamps t
-    JOIN sun_positions sp ON sp.ts_id = t.id
-    WHERE t.ts > NOW() - INTERVAL '6 months'
-      AND sp.elevation_deg > 0
-    ON CONFLICT (ts_id, bench_id) DO NOTHING;
-    $$
-);
-```
-
-## Monitoring
-
-```sql
--- Check progress during computation
+-- Daily breakdown
 SELECT 
-    COUNT(*) as total_records,
-    COUNT(DISTINCT bench_id) as benches_processed,
-    MIN(t.ts) as start_time,
-    MAX(t.ts) as end_time,
-    COUNT(CASE WHEN exposed THEN 1 END) as sunny_records,
-    COUNT(CASE WHEN NOT exposed THEN 1 END) as shady_records
+    t.ts::DATE as date,
+    COUNT(*) as records,
+    ROUND(COUNT(CASE WHEN e.exposed THEN 1 END) * 100.0 / COUNT(*), 1) as sunny_pct
 FROM exposure e
-JOIN timestamps t ON t.id = e.ts_id
-WHERE EXTRACT(YEAR FROM t.ts) = 2026;
+JOIN timestamps t ON e.ts_id = t.id
+GROUP BY t.ts::DATE
+ORDER BY t.ts::DATE;
 
--- Monitor database growth
+-- Top 10 sunniest benches
 SELECT 
-    pg_size_pretty(pg_total_relation_size('exposure')) as exposure_table_size,
-    pg_size_pretty(pg_total_relation_size('dsm_raster')) as dsm_size,
-    pg_size_pretty(pg_sizeof('exposure')::bigint * COUNT(*)::bigint) as estimated_raw_size
-FROM exposure;
-
--- Check computation progress by bench
-SELECT 
-    COUNT(DISTINCT bench_id) as benches_completed,
-    (SELECT COUNT(*) FROM benches) as total_benches,
-    ROUND(COUNT(DISTINCT bench_id)::numeric / (SELECT COUNT(*) FROM benches) * 100, 2) as completion_percent
-FROM exposure
-WHERE ts_id IN (
-    SELECT id FROM timestamps 
-    WHERE EXTRACT(YEAR FROM ts) = 2026
-);
-
--- Monitor query performance
-SELECT query, calls, total_time, mean_time, rows
-FROM pg_stat_statements 
-WHERE query LIKE '%is_exposed%' OR query LIKE '%exposure%'
-ORDER BY total_time DESC
+    b.id,
+    COUNT(CASE WHEN e.exposed THEN 1 END) as sunny_hours,
+    ROUND(COUNT(CASE WHEN e.exposed THEN 1 END) * 100.0 / 365, 1) as sunny_pct
+FROM exposure e
+JOIN benches b ON e.bench_id = b.id
+GROUP BY b.id
+ORDER BY sunny_hours DESC
 LIMIT 10;
 ```
 
+## Performance
+
+### Adaptive Configuration
+
+The pipeline automatically adjusts settings based on hardware:
+
+| Hardware | Workers | Work Mem | Batch Size |
+|----------|---------|----------|------------|
+| High-end (8+ cores) | 8 | 1GB | 25 |
+| Mid-range (4-7 cores) | 4 | 512MB | 15 |
+| Low-end/VPS | 2 | 256MB | 10 |
+
+### Expected Runtime
+
+| Step | Time | Records |
+|------|------|---------|
+| Timestamps | < 1s | 1,008 |
+| Sun Positions | < 1s | 1,008 |
+| Exposure | 15-30 min | ~18,250 |
+
+### Manual Tuning
+
+```sql
+-- Increase parallel workers
+SET max_parallel_workers_per_gather = 8;
+SET max_parallel_workers = 8;
+
+-- Increase work memory
+SET work_mem = '1GB';
+
+-- Optimize for SSD
+SET random_page_cost = 1.1;
+SET effective_cache_size = '4GB';
+```
+
+## Algorithm
+
+### Line-of-Sight Calculation
+
+The `is_exposed_optimized()` function performs:
+
+1. **Sun position**: Calculated using suncalc_postgres extension
+2. **Ray casting**: 1000m ray from bench toward sun (10m steps)
+3. **DSM sampling**: Sample terrain height along ray
+4. **Obstacle detection**: Compare terrain height vs sun line
+5. **Result**: TRUE (sunny) or FALSE (shady)
+
+### Key Parameters
+
+- **Ray distance**: 1000m (max)
+- **Step size**: 10m (sampling interval)
+- **Bench height**: DEM elevation + 1.2m (sitting height)
+- **Nighttime skip**: Sun elevation ≤ 0° (skipped for performance)
+
 ## Data Sources
 
-### DSM/DEM Data
-- Source: Bundesamt für Eich- und Vermessungswesen (BEV)
-- Resolution: 1m (DSM), 10m (DEM)
-- Format: GeoTIFF
-- Download: https://www.bev.gv.at/
+### DSM/DEM Rasters
+- **Source**: Bundesamt für Eich- und Vermessungswesen (BEV)
+- **Resolution**: 1m (DSM), 10m (DEM)
+- **Format**: GeoTIFF
+- **Coordinate System**: EPSG:3857 (Web Mercator)
 
-### OpenStreetMap Data
-- Source: OpenStreetMap
-- Query: Overpass API
-- Tags: amenity=bench, tourism=viewpoint
-- Export: GeoJSON format
+### Bench Locations
+- **Source**: OpenStreetMap
+- **Query**: Overpass API for amenity=bench in Graz
+- **Format**: GeoJSON
+- **Coordinate System**: EPSG:4326 (WGS84)
+
+## Coordinate Systems
+
+| Data Type | SRID | Description |
+|-----------|------|-------------|
+| Benches | EPSG:4326 | WGS84 lat/lon |
+| Rasters | EPSG:3857 | Web Mercator |
+| Transformation | Automatic | In `is_exposed_optimized()` |
+
+## Monitoring
+
+### During Computation
+
+```sql
+-- Check progress
+SELECT 
+    COUNT(*) as records,
+    COUNT(DISTINCT bench_id) as benches
+FROM exposure;
+
+-- Check current activity
+SELECT 
+    pid,
+    state,
+    NOW() - query_start as duration,
+    query
+FROM pg_stat_activity
+WHERE state = 'active';
+```
+
+### After Completion
+
+```sql
+-- Overall statistics
+SELECT * FROM get_exposure_computation_stats();
+
+-- Database size
+SELECT 
+    pg_size_pretty(pg_total_relation_size('exposure')) as exposure_size,
+    pg_size_pretty(pg_total_relation_size('dsm_raster')) as dsm_size;
+
+-- Query performance
+SELECT query, calls, total_time, mean_time
+FROM pg_stat_statements
+WHERE query LIKE '%exposure%'
+ORDER BY total_time DESC
+LIMIT 5;
+```
 
 ## Troubleshooting
 
-**Out of memory errors:**
+### Out of Memory
 ```sql
 -- Reduce parallel workers temporarily
-SET max_parallel_workers_per_gather = 1;
-SET work_mem = '64MB';
+SET max_parallel_workers_per_gather = 2;
+SET work_mem = '256MB';
 ```
 
-**Slow DSM queries:**
-```sql
--- Check if spatial indexes exist on raster tables
-SELECT r_table_name, r_raster_column FROM raster_columns WHERE r_table_name IN ('dsm_raster', 'dem_raster');
-
--- Rebuild indexes if needed
-REINDEX INDEX CONCURRENTLY dsm_raster_st_convexhull_idx;
-```
-
-**Database connection issues:**
-```sql
--- Check available connections
-SELECT count(*) FROM pg_stat_activity WHERE state = 'active';
-
--- Monitor long-running queries
-SELECT pid, now() - pg_stat_activity.query_start AS duration, query 
-FROM pg_stat_activity 
-WHERE state = 'active' AND now() - pg_stat_activity.query_start > interval '5 minutes';
-```
-
-**Computation too slow:**
+### Slow Computation
 ```sql
 -- Optimize PostgreSQL configuration
 ALTER SYSTEM SET shared_buffers = '2GB';
 ALTER SYSTEM SET effective_cache_size = '6GB';
-ALTER SYSTEM SET random_page_cost = 1.1;  -- For SSD storage
 SELECT pg_reload_conf();
 ```
 
-**Incomplete results:**
+### No Data Generated
 ```sql
--- Check for missing data
-SELECT 
-    (SELECT COUNT(*) FROM benches) as total_benches,
-    COUNT(DISTINCT bench_id) as processed_benches,
-    (SELECT COUNT(*) FROM timestamps WHERE EXTRACT(YEAR FROM ts) = 2026) as total_timestamps,
-    COUNT(DISTINCT ts_id) as processed_timestamps
-FROM exposure;
+-- Check if benches exist
+SELECT COUNT(*) FROM benches;
+
+-- Check if rasters exist
+SELECT COUNT(*) FROM dsm_raster;
+SELECT COUNT(*) FROM dem_raster;
+
+-- Verify timestamps
+SELECT MIN(ts), MAX(ts) FROM timestamps;
+```
+
+### Wrong Elevations
+```sql
+-- Re-run elevation update
+SELECT update_bench_elevations();
+
+-- Check elevation range
+SELECT MIN(elevation), MAX(elevation) FROM benches;
+```
+
+## Maintenance
+
+### Clear All Computed Data
+
+```sql
+DELETE FROM exposure;
+DELETE FROM sun_positions;
+DELETE FROM timestamps;
+```
+
+### Reset Bench Elevations
+
+```sql
+-- Set to NULL first, then update
+UPDATE benches SET elevation = NULL;
+SELECT update_bench_elevations();
+```
+
+### Check Index Health
+
+```sql
+-- Check for missing indexes
+SELECT indexname, indexdef 
+FROM pg_indexes 
+WHERE tablename IN ('benches', 'timestamps', 'sun_positions', 'exposure');
 ```
 
 ## Documentation
 
-For detailed pipeline information, see:
-- [Sunshine Calculation Pipeline](../docs/sunshine_calculation_pipeline.md)
+- [Detailed Pipeline Documentation](../docs/sunshine_calculation_pipeline.md)
 - [Backend Architecture](../docs/architecture.md)
+- [Database Schema](../database/README.md)
+- [Deployment Guide](../docs/DEPLOYMENT.md)
