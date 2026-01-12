@@ -23,7 +23,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR/infrastructure/docker"
 
 PSQL_CMD="docker-compose --env-file ../../.env exec -T postgres psql -U postgres -d sonnenbankerl"
-RAW_CHECK_DIR="data/raw"
+RAW_CHECK_DIR="../../data/raw"
 
 print_header() {
   echo "=============================================="
