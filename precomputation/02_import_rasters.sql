@@ -6,8 +6,8 @@
 
 -- Import commands (run from shell):
 -- -----------------------------------------------------------------------------
--- raster2pgsql -s 4326 -I -C -M ../data/raw/dsm_graz_1m.tif dsm_raster | psql -d sonnenbankerl
--- raster2pgsql -s 4326 -I -C -M ../data/raw/dem_graz.tif dem_raster | psql -d sonnenbankerl
+-- raster2pgsql -s 3857 -I -C -M ../data/raw/dsm_graz_1m.tif dsm_raster | psql -d sonnenbankerl
+-- raster2pgsql -s 3857 -I -C -M ../data/raw/dem_graz.tif dem_raster | psql -d sonnenbankerl
 -- -----------------------------------------------------------------------------
 
 -- After importing rasters, verify their properties
@@ -50,8 +50,8 @@ CREATE INDEX IF NOT EXISTS idx_dsm_raster_st_convexhull ON dsm_raster USING GIST
 CREATE INDEX IF NOT EXISTS idx_dem_raster_st_convexhull ON dem_raster USING GIST (ST_ConvexHull(rast));
 
 -- Create spatial constraints to ensure data integrity
-ALTER TABLE dsm_raster ADD CONSTRAINT enforce_srid_dsm CHECK (ST_SRID(rast) = 4326);
-ALTER TABLE dem_raster ADD CONSTRAINT enforce_srid_dem CHECK (ST_SRID(rast) = 4326);
+ALTER TABLE dsm_raster ADD CONSTRAINT enforce_srid_dsm CHECK (ST_SRID(rast) = 3857);
+ALTER TABLE dem_raster ADD CONSTRAINT enforce_srid_dem CHECK (ST_SRID(rast) = 3857);
 
 -- Create view for easy raster access
 CREATE OR REPLACE VIEW v_raster_info AS

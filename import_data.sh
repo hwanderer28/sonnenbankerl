@@ -77,8 +77,8 @@ import_rasters() {
   echo "Step 1: Importing rasters (DSM/DEM)..."
   echo "----------------------------------------------"
   check_raster_files
-  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
-  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
+  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
+  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
   $PSQL_CMD -f /precomputation/02_import_rasters.sql
   echo ""
 }
