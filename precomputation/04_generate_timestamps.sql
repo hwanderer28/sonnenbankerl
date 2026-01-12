@@ -22,15 +22,15 @@ CREATE INDEX IF NOT EXISTS idx_timestamps_ts ON timestamps (ts);
 -- Uses local time (Europe/Vienna) for user-friendly display
 CREATE OR REPLACE FUNCTION generate_weekly_timestamps() RETURNS INTEGER AS $$
 DECLARE
+    local_today DATE := (timezone('Europe/Vienna', now()))::date;
     start_time TIMESTAMPTZ;
     end_time TIMESTAMPTZ;
     generated_count INTEGER := 0;
     existing_count INTEGER;
 BEGIN
-    -- Calculate time range: today 00:00 to 7 days from now 00:00
-    -- Stored as TIMESTAMPTZ (UTC internally) but represents local time
-    start_time := (CURRENT_DATE::timestamp AT TIME ZONE 'Europe/Vienna');
-    end_time := ((CURRENT_DATE + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
+    -- Calculate time range: local today 00:00 to +7 days 00:00
+    start_time := (local_today::timestamp AT TIME ZONE 'Europe/Vienna');
+    end_time := ((local_today + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
     -- Check existing timestamps in this range
     existing_count := COUNT(*) FROM timestamps
@@ -68,17 +68,20 @@ DECLARE
     actual_count INTEGER;
     start_date DATE;
     end_date DATE;
+    local_today DATE;
 BEGIN
     -- Count actual timestamps
+    local_today := (timezone('Europe/Vienna', now()))::date;
+
     SELECT COUNT(*) INTO actual_count FROM timestamps
-    WHERE ts >= (CURRENT_DATE::timestamp AT TIME ZONE 'Europe/Vienna')
-      AND ts < ((CURRENT_DATE + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
+    WHERE ts >= (local_today::timestamp AT TIME ZONE 'Europe/Vienna')
+      AND ts < ((local_today + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
     -- Get date range
     SELECT MIN(ts)::DATE, MAX(ts)::DATE INTO start_date, end_date
     FROM timestamps
-    WHERE ts >= (CURRENT_DATE::timestamp AT TIME ZONE 'Europe/Vienna')
-      AND ts < ((CURRENT_DATE + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
+    WHERE ts >= (local_today::timestamp AT TIME ZONE 'Europe/Vienna')
+      AND ts < ((local_today + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
     -- Validate
     IF actual_count != expected_count THEN

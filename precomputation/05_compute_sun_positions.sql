@@ -74,22 +74,23 @@ BEGIN
             computed_count := 0;
         END;
     ELSE
-        -- Use sample data if extension not available
+        -- Use realistic sample data if extension not available
         INSERT INTO sun_positions (ts_id, azimuth_deg, elevation_deg)
         SELECT
-            t.id as ts_id,
-            CASE
-                WHEN EXTRACT(MONTH FROM t.ts) IN (12, 1, 2) THEN 120.0
-                WHEN EXTRACT(MONTH FROM t.ts) IN (3, 4, 10, 11) THEN 270.0
-                WHEN EXTRACT(MONTH FROM t.ts) IN (6, 7, 8) THEN 45.0
-                ELSE 0.0
-            END as elevation_deg,
-            90.0 + (EXTRACT(HOUR FROM t.ts) * 15) as azimuth_deg
-        FROM timestamps t
-        WHERE t.ts::DATE BETWEEN start_date AND end_date;
+            t.id AS ts_id,
+            ((day_fraction * 360.0) - 180.0) AS azimuth_deg,
+            GREATEST(0.0, 60.0 * SIN(PI() * day_fraction)) AS elevation_deg
+        FROM (
+            SELECT
+                ts,
+                id,
+                ((EXTRACT(EPOCH FROM (ts AT TIME ZONE 'Europe/Vienna')) % 86400) / 86400.0) AS day_fraction
+            FROM timestamps
+            WHERE ts::DATE BETWEEN start_date AND end_date
+        ) t;
 
         GET DIAGNOSTICS computed_count = ROW_COUNT;
-        RAISE WARNING 'suncalc_postgres extension not available - using sample sun data';
+        RAISE WARNING 'suncalc_postgres extension not available - using sample sun data (synthetic day curve)';
     END IF;
 
     RAISE NOTICE 'Computed % sun positions', computed_count;

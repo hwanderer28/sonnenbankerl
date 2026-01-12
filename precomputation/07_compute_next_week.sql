@@ -59,17 +59,21 @@ BEGIN
         COUNT(*) as total_records,
         COUNT(DISTINCT e.bench_id) as benches_processed,
         COUNT(CASE WHEN exposed THEN 1 END) as sunny_records,
-        COUNT(CASE WHEN NOT exposed THEN 1 END) as shady_records,
-        ROUND(COUNT(CASE WHEN exposed THEN 1 END) * 100.0 / COUNT(*), 1) as sunny_pct
-    INTO exp_count, bench_count, ts_count, sp_count, exp_count
+        COUNT(CASE WHEN NOT exposed THEN 1 END) as shady_records
+    INTO exp_count, bench_count, ts_count, sp_count
     FROM exposure e
     JOIN timestamps t ON e.ts_id = t.id
     WHERE t.ts::DATE BETWEEN start_date AND end_date;
 
     RAISE NOTICE '  Total records: %', exp_count;
     RAISE NOTICE '  Benches with data: %', bench_count;
-    RAISE NOTICE '  Sunny: % (% %%)', ts_count, ROUND(ts_count * 100.0 / exp_count, 1);
-    RAISE NOTICE '  Shady: % (% %%)', sp_count, ROUND(sp_count * 100.0 / exp_count, 1);
+    IF exp_count > 0 THEN
+        RAISE NOTICE '  Sunny: % (% %%)', ts_count, ROUND(ts_count * 100.0 / exp_count, 1);
+        RAISE NOTICE '  Shady: % (% %%)', sp_count, ROUND(sp_count * 100.0 / exp_count, 1);
+    ELSE
+        RAISE NOTICE '  Sunny: 0 (0.0%%)';
+        RAISE NOTICE '  Shady: 0 (0.0%%)';
+    END IF;
     RAISE NOTICE '';
 
     -- Per-day breakdown
