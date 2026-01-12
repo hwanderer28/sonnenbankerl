@@ -12,9 +12,7 @@ CREATE EXTENSION IF NOT EXISTS postgis_topology;
 -- Enable TimescaleDB for time-series efficiency
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
--- Enable suncalc_postgres for sun position calculations
--- Note: This requires installation from https://github.com/olithissen/suncalc_postgres
-CREATE EXTENSION IF NOT EXISTS suncalc_postgres;
+-- (suncalc_postgres not installed in this image; sun positions fall back to sample data)
 
 -- Optional: Enable pg_stat_statements for monitoring query performance
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
@@ -41,6 +39,6 @@ SELECT pg_reload_conf();
 DO $$
 BEGIN
     RAISE NOTICE 'PostgreSQL extensions installed successfully';
-    RAISE NOTICE 'Extensions: postgis, postgis_raster, timescaledb, suncalc_postgres, pg_stat_statements';
+    RAISE NOTICE 'Extensions: postgis, postgis_raster, timescaledb, pg_stat_statements';
     RAISE NOTICE 'Configuration optimized for raster processing and parallel queries';
 END $$;

@@ -23,7 +23,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR/infrastructure/docker"
 
 PSQL_CMD="docker-compose --env-file ../../.env exec -T postgres psql -U postgres -d sonnenbankerl"
-RAW_CHECK_DIR="../data/raw"
+RAW_CHECK_DIR="data/raw"
 
 print_header() {
   echo "=============================================="
@@ -50,6 +50,9 @@ check_raster_files() {
       missing=1
     fi
   done
+  if [[ "$missing" -eq 1 ]]; then
+    echo "Checked host path (from infrastructure/docker): $RAW_CHECK_DIR"
+  fi
   if [[ "$missing" -eq 1 ]]; then
     echo "Please place required rasters in data/raw before importing."
     exit 1
