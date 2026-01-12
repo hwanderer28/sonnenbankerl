@@ -68,8 +68,8 @@ BEGIN
 
     RAISE NOTICE '  Total records: %', exp_count;
     RAISE NOTICE '  Benches with data: %', bench_count;
-    RAISE NOTICE '  Sunny: % (%%)', ts_count, ROUND(ts_count * 100.0 / exp_count, 1);
-    RAISE NOTICE '  Shady: % (%%)', sp_count, ROUND(sp_count * 100.0 / exp_count, 1);
+    RAISE NOTICE '  Sunny: % (% %%)', ts_count, ROUND(ts_count * 100.0 / exp_count, 1);
+    RAISE NOTICE '  Shady: % (% %%)', sp_count, ROUND(sp_count * 100.0 / exp_count, 1);
     RAISE NOTICE '';
 
     -- Per-day breakdown
