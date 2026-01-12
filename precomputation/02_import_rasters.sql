@@ -32,15 +32,15 @@ BEGIN
         RETURN;
     END IF;
     
-    -- Get raster extents
-    EXECUTE 'SELECT ST_SummaryStatsAgg(ST_Union(rast)) as stats FROM dsm_raster' INTO dsm_extent;
-    EXECUTE 'SELECT ST_SummaryStatsAgg(ST_Union(rast)) as stats FROM dem_raster' INTO dem_extent;
+    -- Get raster stats (band 1, exclude nodata)
+    EXECUTE 'SELECT ST_SummaryStatsAgg(rast, 1, true) FROM dsm_raster' INTO dsm_extent;
+    EXECUTE 'SELECT ST_SummaryStatsAgg(rast, 1, true) FROM dem_raster' INTO dem_extent;
     
-    RAISE NOTICE 'DSM raster imported successfully: % tiles, %.2f MB', 
+    RAISE NOTICE 'DSM raster imported successfully: % tiles, %', 
                  (SELECT COUNT(*) FROM dsm_raster), 
                  (SELECT pg_size_pretty(pg_total_relation_size('dsm_raster')));
     
-    RAISE NOTICE 'DEM raster imported successfully: % tiles, %.2f MB', 
+    RAISE NOTICE 'DEM raster imported successfully: % tiles, %', 
                  (SELECT COUNT(*) FROM dem_raster), 
                  (SELECT pg_size_pretty(pg_total_relation_size('dem_raster')));
 END $$;
@@ -59,22 +59,22 @@ SELECT
     'dsm_raster' as table_name,
     COUNT(*) as tile_count,
     pg_size_pretty(pg_total_relation_size('dsm_raster')) as table_size,
-    ST_SRID(rast) as srid,
-    ST_Width(rast) as pixel_width,
-    ST_Height(rast) as pixel_height,
-    ST_ScaleX(rast) as pixel_size_x,
-    ST_ScaleY(rast) as pixel_size_y
+    MIN(ST_SRID(rast)) as srid,
+    AVG(ST_Width(rast)) as pixel_width,
+    AVG(ST_Height(rast)) as pixel_height,
+    AVG(ST_ScaleX(rast)) as pixel_size_x,
+    AVG(ST_ScaleY(rast)) as pixel_size_y
 FROM dsm_raster
 UNION ALL
 SELECT 
     'dem_raster' as table_name,
     COUNT(*) as tile_count,
     pg_size_pretty(pg_total_relation_size('dem_raster')) as table_size,
-    ST_SRID(rast) as srid,
-    ST_Width(rast) as pixel_width,
-    ST_Height(rast) as pixel_height,
-    ST_ScaleX(rast) as pixel_size_x,
-    ST_ScaleY(rast) as pixel_size_y
+    MIN(ST_SRID(rast)) as srid,
+    AVG(ST_Width(rast)) as pixel_width,
+    AVG(ST_Height(rast)) as pixel_height,
+    AVG(ST_ScaleX(rast)) as pixel_size_x,
+    AVG(ST_ScaleY(rast)) as pixel_size_y
 FROM dem_raster;
 
 -- Grant permissions to application user
