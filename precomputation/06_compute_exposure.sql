@@ -109,6 +109,7 @@ DECLARE
     sin_az FLOAT;
     tan_el FLOAT;
     dsm_raster_ref RASTER;
+    raster_env GEOMETRY;
     step_offset FLOAT;
 BEGIN
     -- Skip nighttime
@@ -131,6 +132,7 @@ BEGIN
     END IF;
 
     target_srid := COALESCE(NULLIF(ST_SRID(dsm_raster_ref), 0), target_srid);
+    raster_env := ST_Envelope((dsm_raster_ref)::geometry);
 
     -- Adjust step/distance if raster is geographic
     IF target_srid = 4326 THEN
@@ -160,7 +162,12 @@ BEGIN
             target_srid
         );
         
-        -- Get terrain height at sample point
+        -- If sample leaves raster footprint, assume clear LOS beyond raster
+        IF NOT ST_Contains(raster_env, sample_point) THEN
+            EXIT; -- leave loop; no obstacle encountered within raster
+        END IF;
+        
+        -- Get terrain height at sample point (treat NULL as no obstacle)
         max_z := GREATEST(max_z, COALESCE(ST_Value(dsm_raster_ref, sample_point), -9999));
         
         -- Early exit: obstacle found
@@ -169,7 +176,7 @@ BEGIN
         END IF;
     END LOOP;
     
-    -- Sun is visible (no obstructions)
+    -- Sun is visible (no obstructions within raster)
     RETURN obs_z + tan_el * distance > max_z;
 END;
 $$ LANGUAGE plpgsql PARALLEL SAFE;
