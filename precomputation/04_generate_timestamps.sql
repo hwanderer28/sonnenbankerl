@@ -28,7 +28,7 @@ DECLARE
     generated_count INTEGER := 0;
     existing_count INTEGER;
 BEGIN
-    -- Calculate time range: local today 00:00 to +7 days 00:00
+    -- Calculate time range: local today 00:00 to today+6 23:50 (7 days, 10-min steps)
     start_time := (local_today::timestamp AT TIME ZONE 'Europe/Vienna');
     end_time := ((local_today + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
@@ -78,7 +78,8 @@ BEGIN
       AND ts < ((local_today + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
     -- Get date range
-    SELECT MIN(ts)::DATE, MAX(ts)::DATE INTO start_date, end_date
+    SELECT MIN((ts AT TIME ZONE 'Europe/Vienna')::DATE), MAX((ts AT TIME ZONE 'Europe/Vienna')::DATE)
+    INTO start_date, end_date
     FROM timestamps
     WHERE ts >= (local_today::timestamp AT TIME ZONE 'Europe/Vienna')
       AND ts < ((local_today + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
@@ -133,13 +134,13 @@ SELECT * FROM get_timestamp_stats();
 
 -- Display sample timestamps
 SELECT
-    ts::date as date,
+    (ts AT TIME ZONE 'Europe/Vienna')::date as date,
     COUNT(*) as intervals,
-    MIN(ts)::time as first_time,
-    MAX(ts)::time as last_time
+    MIN((ts AT TIME ZONE 'Europe/Vienna')::time) as first_time,
+    MAX((ts AT TIME ZONE 'Europe/Vienna')::time) as last_time
 FROM timestamps
-GROUP BY ts::date
-ORDER BY ts::date;
+GROUP BY (ts AT TIME ZONE 'Europe/Vienna')::date
+ORDER BY (ts AT TIME ZONE 'Europe/Vienna')::date;
 
 DO $$
 BEGIN
