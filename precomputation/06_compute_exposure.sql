@@ -86,6 +86,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
+-- Remove legacy 3-arg overload to avoid ambiguity
+DROP FUNCTION IF EXISTS is_exposed_optimized(geography, float, float);
+
 -- Optimized line-of-sight function with pre-computed values
 CREATE OR REPLACE FUNCTION is_exposed_optimized(
     bench_geom GEOGRAPHY,
@@ -162,17 +165,6 @@ BEGIN
     
     -- Sun is visible (no obstructions)
     RETURN obs_z + tan_el * distance > max_z;
-END;
-$$ LANGUAGE plpgsql PARALLEL SAFE;
-
--- Convenience overload without explicit DSM
-CREATE OR REPLACE FUNCTION is_exposed_optimized(
-    bench_geom GEOGRAPHY,
-    azimuth FLOAT,
-    elevation FLOAT
-) RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, NULL::public.raster);
 END;
 $$ LANGUAGE plpgsql PARALLEL SAFE;
 
@@ -256,7 +248,7 @@ BEGIN
         SELECT /*+ Parallel(t 4) Parallel(b 4) */
             t.id as ts_id,
             b.id as bench_id,
-            is_exposed_optimized(b.geom, sp.azimuth_deg, sp.elevation_deg) as exposed
+            is_exposed_optimized(b.geom, sp.azimuth_deg, sp.elevation_deg, NULL::public.raster) as exposed
         FROM benches b
         CROSS JOIN timestamps t
         JOIN sun_positions sp ON sp.ts_id = t.id
