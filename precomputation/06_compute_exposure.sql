@@ -320,16 +320,17 @@ BEGIN
     WHERE t.ts::DATE BETWEEN start_date AND end_date;
     
     RETURN QUERY
-    SELECT 'Weekly Window'::TEXT, start_date::text || ' to ' || end_date::text::TEXT, NULL::FLOAT
+    SELECT 'Weekly Window'::TEXT, (start_date::text || ' to ' || end_date::text)::TEXT, NULL::FLOAT
     UNION ALL
     SELECT 'Total Possible'::TEXT, total_possible, 100.0
     UNION ALL
     SELECT 'Computed'::TEXT, total_computed,
-           ROUND((total_computed::FLOAT / NULLIF(total_possible, 0)) * 100, 2)
+           ROUND(((total_computed::FLOAT / NULLIF(total_possible, 0)) * 100)::numeric, 2)
     UNION ALL
     SELECT 'Benches'::TEXT, bench_count, NULL::FLOAT
     UNION ALL
     SELECT 'Daylight Timestamps'::TEXT, daylight_timestamps, NULL::FLOAT;
+
 END;
 $$ LANGUAGE plpgsql;
 

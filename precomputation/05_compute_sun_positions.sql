@@ -137,14 +137,14 @@ BEGIN
     SELECT
         'Elevation Range' as validation_type,
         CASE WHEN min_elev >= -90 AND max_elev <= 90 THEN 'PASS' ELSE 'FAIL' END as status,
-        'Min: ' || ROUND(min_elev, 2) || '°, Max: ' || ROUND(max_elev, 2) || '°' as details;
+        'Min: ' || ROUND(min_elev::numeric, 2) || '°, Max: ' || ROUND(max_elev::numeric, 2) || '°' as details;
 
     -- Check azimuth ranges
     RETURN QUERY
     SELECT
         'Azimuth Range' as validation_type,
         CASE WHEN min_az >= -180 AND max_az <= 180 THEN 'PASS' ELSE 'FAIL' END as status,
-        'Min: ' || ROUND(min_az, 2) || '°, Max: ' || ROUND(max_az, 2) || '°' as details;
+        'Min: ' || ROUND(min_az::numeric, 2) || '°, Max: ' || ROUND(max_az::numeric, 2) || '°' as details;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -216,7 +216,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM sun_positions LIMIT 1) THEN
         RAISE NOTICE '';
         RAISE NOTICE '=== Sun Position Statistics ===';
-        PERFORM get_sun_position_stats();
+        PERFORM public.get_sun_position_stats();
     ELSE
         RAISE WARNING 'No sun positions computed - statistics skipped';
     END IF;
@@ -225,9 +225,9 @@ END $$;
 -- Show sample data
 SELECT
     t.ts::date as date,
-    ROUND(MIN(CASE WHEN sp.elevation_deg > 0 THEN sp.azimuth_deg END), 1) as sunrise_azimuth,
+    ROUND(MIN(CASE WHEN sp.elevation_deg > 0 THEN sp.azimuth_deg END)::numeric, 1) as sunrise_azimuth,
     TO_CHAR(MIN(CASE WHEN sp.elevation_deg > 0 THEN t.ts END), 'HH24:MI') as sunrise_time,
-    ROUND(MAX(sp.elevation_deg), 1) as max_elevation,
+    ROUND(MAX(sp.elevation_deg)::numeric, 1) as max_elevation,
     TO_CHAR(MAX(CASE WHEN sp.elevation_deg > 0 THEN t.ts END), 'HH24:MI') as solar_noon,
     TO_CHAR(MAX(CASE WHEN sp.elevation_deg > 0 THEN t.ts END), 'HH24:MI') as sunset_time
 FROM sun_positions sp
@@ -249,6 +249,6 @@ BEGIN
     RAISE NOTICE 'Sun position computation complete!';
     RAISE NOTICE 'Total: % positions (%) daylight',
                  total_positions,
-                 ROUND(daylight_positions * 100.0 / NULLIF(total_positions, 0), 1);
+                 ROUND((daylight_positions * 100.0 / NULLIF(total_positions, 0))::numeric, 1);
     RAISE NOTICE '======================================';
 END $$;

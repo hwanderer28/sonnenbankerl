@@ -29,8 +29,8 @@ DECLARE
 BEGIN
     -- Calculate time range: today 00:00 to 7 days from now 00:00
     -- Stored as TIMESTAMPTZ (UTC internally) but represents local time
-    start_time := (CURRENT_DATE || ' 00:00:00+01')::timestamptz;
-    end_time := (CURRENT_DATE + 7)::date || ' 00:00:00+01';
+    start_time := (CURRENT_DATE::timestamp AT TIME ZONE 'Europe/Vienna');
+    end_time := ((CURRENT_DATE + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
     -- Check existing timestamps in this range
     existing_count := COUNT(*) FROM timestamps
@@ -71,14 +71,14 @@ DECLARE
 BEGIN
     -- Count actual timestamps
     SELECT COUNT(*) INTO actual_count FROM timestamps
-    WHERE ts >= (CURRENT_DATE || ' 00:00:00+01')::timestamptz
-      AND ts < (CURRENT_DATE + 7)::date || ' 00:00:00+01'::timestamptz;
+    WHERE ts >= (CURRENT_DATE::timestamp AT TIME ZONE 'Europe/Vienna')
+      AND ts < ((CURRENT_DATE + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
     -- Get date range
     SELECT MIN(ts)::DATE, MAX(ts)::DATE INTO start_date, end_date
     FROM timestamps
-    WHERE ts >= (CURRENT_DATE || ' 00:00:00+01')::timestamptz
-      AND ts < (CURRENT_DATE + 7)::date || ' 00:00:00+01'::timestamptz;
+    WHERE ts >= (CURRENT_DATE::timestamp AT TIME ZONE 'Europe/Vienna')
+      AND ts < ((CURRENT_DATE + 7)::timestamp AT TIME ZONE 'Europe/Vienna');
 
     -- Validate
     IF actual_count != expected_count THEN
