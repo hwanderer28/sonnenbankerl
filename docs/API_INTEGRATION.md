@@ -45,6 +45,10 @@ curl https://sonnenbankerl.ideanexus.cloud/api/health
 
 **Purpose**: Find benches within a radius of a given location
 
+Notes:
+- Timestamps are rounded to the nearest 10-minute slot for “current” status.
+- `window_start`/`window_end` indicate the available precomputed week; if null, data has not been computed yet.
+
 **Parameters:**
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -73,7 +77,8 @@ curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radi
       "distance": 86.59,
       "current_status": "sunny",
       "sun_until": "2025-12-30T18:00:00Z",
-      "remaining_minutes": 210
+      "remaining_minutes": 210,
+      "status_note": null
     },
     {
       "id": 2,
@@ -87,9 +92,12 @@ curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radi
       "distance": 171.03,
       "current_status": "shady",
       "sun_until": null,
-      "remaining_minutes": null
+      "remaining_minutes": null,
+      "status_note": "not within the next week"
     }
-  ]
+  ],
+  "window_start": "2025-12-30T00:00:00Z",
+  "window_end": "2026-01-05T23:50:00Z"
 }
 ```
 
@@ -105,11 +113,16 @@ curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radi
 - `current_status`: Sun status - `"sunny"`, `"shady"`, or `"unknown"` (string)
 - `sun_until`: Timestamp when sun status changes (ISO 8601, nullable)
 - `remaining_minutes`: Minutes until sun status changes (integer, nullable)
+- `status_note`: Message when no change occurs within the computed week (nullable)
+- `status_note`: Message when no change occurs within the computed week (nullable)
+- `window_start` / `window_end`: Available precomputed time window (nullable)
 
 **Empty Result:**
 ```json
 {
-  "benches": []
+  "benches": [],
+  "window_start": null,
+  "window_end": null
 }
 ```
 
@@ -120,6 +133,11 @@ curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radi
 **Endpoint**: `GET /api/benches/{id}`
 
 **Purpose**: Get detailed information about a specific bench
+
+Notes:
+- Timestamps are rounded to the nearest 10-minute slot for “current” status.
+- If shaded and no sunny interval exists within the computed week, `status_note` is "not within the next week".
+- If sunny and no shade within the computed week, `status_note` reflects continuous sun in that window.
 
 **Path Parameters:**
 - `id`: Bench ID (integer)
@@ -143,6 +161,26 @@ curl https://sonnenbankerl.ideanexus.cloud/api/benches/1
   "current_status": "sunny",
   "sun_until": "2025-12-30T18:00:00Z",
   "remaining_minutes": 210,
+  "status_note": null,
+  "created_at": "2025-12-30T16:16:12.473628Z"
+}
+```
+
+If shaded and no sunny slot exists in the computed week:
+```json
+{
+  "id": 2,
+  "osm_id": 1002,
+  "name": "Stadtpark Bench 2",
+  "location": {
+    "lat": 47.0715,
+    "lon": 15.4405
+  },
+  "elevation": 354.5,
+  "current_status": "shady",
+  "sun_until": null,
+  "remaining_minutes": null,
+  "status_note": "not within the next week",
   "created_at": "2025-12-30T16:16:12.473628Z"
 }
 ```
@@ -437,16 +475,12 @@ Features:
 
 ### Sample Test Coordinates
 
-**Graz Stadtpark (has benches):**
+Results depend on your loaded OSM benches and computed exposure data. After importing benches for Graz, you can use:
 - Latitude: `47.07`
 - Longitude: `15.44`
 - Radius: `1000` meters
 
-**Vienna Stadtpark (no benches in sample data):**
-- Latitude: `48.2082`
-- Longitude: `16.3738`
-- Expected: Empty result
-
+If no benches are loaded or the pipeline hasn’t been run, requests will return empty results.
 ### Error Handling
 
 Always handle these scenarios:
@@ -483,17 +517,7 @@ Always handle these scenarios:
 
 ## 📊 Current Data
 
-**Sample benches (3 total):**
-
-| ID | Name | Latitude | Longitude | Elevation |
-|----|------|----------|-----------|-----------|
-| 1 | Stadtpark Bench 1 | 47.0707 | 15.4395 | 353.2m |
-| 2 | Stadtpark Bench 2 | 47.0715 | 15.4405 | 354.5m |
-| 3 | Stadtpark Bench 3 | 47.0695 | 15.4385 | 352.8m |
-
-**Location**: All benches are in Graz Stadtpark area
-
-**Search Radius**: Use 1000m (1km) radius for best results
+The API starts with no benches or exposure records. Import OSM benches and run the precomputation pipeline to generate timestamps, sun positions, and exposure data before testing.
 
 ---
 
@@ -541,13 +565,13 @@ Future<Position> getCurrentLocation() async {
 - Contact backend team
 
 **2. Empty bench list when you expect results**
-- Check coordinates are in Graz (47.07°N, 15.44°E)
+- Check coordinates are in the area you imported
 - Increase search radius
-- Sample data only has 3 benches in Stadtpark
+- Ensure OSM benches are loaded and the precomputation pipeline has run
 
 **3. "current_status" is always "unknown"**
-- Sample data has future timestamps
-- Will be fixed with real-time data
+- Exposure data may be missing; run the pipeline to generate current-week exposure
+- Confirm timestamps are generated for the current week
 
 **4. SSL Certificate errors**
 - Ensure using `https://` not `http://`

@@ -147,6 +147,28 @@ async def get_next_sun_change(bench_id: int, current_time: datetime, current_sta
         raise
 
 
+async def get_data_window() -> tuple[Optional[datetime], Optional[datetime]]:
+    """
+    Get min and max timestamps available in precomputed data.
+
+    Returns:
+        Tuple of (window_start, window_end) or (None, None) if no timestamps.
+    """
+    pool = await get_pool()
+    query = """
+        SELECT MIN(ts) AS start_ts, MAX(ts) AS end_ts FROM timestamps;
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query)
+            if row:
+                return row['start_ts'], row['end_ts']
+            return None, None
+    except Exception as e:
+        logger.error(f"Error querying data window: {e}")
+        raise
+
+
 async def check_database_health() -> bool:
     """
     Check if database connection is healthy

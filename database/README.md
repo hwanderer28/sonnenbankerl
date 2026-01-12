@@ -7,7 +7,7 @@ PostgreSQL database with PostGIS and TimescaleDB extensions for spatial and time
 - **Database**: PostgreSQL 14
 - **Extensions**: PostGIS, TimescaleDB
 - **Access**: `localhost:5435` from VPS
-- **Sample Data**: 3 benches, 7 days of exposure data
+- **Default Data**: empty; load benches/timestamps/sun via precomputation pipeline
 
 ## Structure
 
@@ -16,7 +16,7 @@ database/
 └── migrations/                    # SQL migration files (run automatically)
     ├── 001_initial_schema.sql     # Core tables and extensions
     ├── 002_create_indexes.sql     # Performance indexes
-    └── 003_sample_data.sql        # Sample benches and exposure data
+    └── 003_sample_data.sql        # (deprecated) no-op placeholder; pipelines load data
 ```
 
 ## Automatic Migration
@@ -55,18 +55,9 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /docker-entryp
 - Partitioned by time (monthly chunks)
 - Primary data table for API queries
 
-## Sample Data
+## Data Loading
 
-The initial deployment includes:
-- **3 benches** in Graz Stadtpark area
-- **~1,008 timestamps** (7 days, 10-minute intervals)
-- **~3,000 exposure records** (simplified sunny hours: 8 AM - 6 PM)
-
-**Sample bench locations:**
-1. Bench 1: 47.0707°N, 15.4395°E (elevation 353.2m)
-2. Bench 2: 47.0715°N, 15.4405°E (elevation 354.5m)
-3. Bench 3: 47.0695°N, 15.4385°E (elevation 352.8m)
-
+By default the database starts empty. Load benches, timestamps, sun positions, and exposure via the weekly precomputation pipeline (`compute_next_week.sh` or the manual 03–06 SQL steps in `precomputation/README.md`).
 ## Database Access
 
 **From VPS:**

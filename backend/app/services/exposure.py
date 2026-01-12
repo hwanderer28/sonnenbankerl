@@ -46,7 +46,6 @@ async def get_bench_sun_status(
         exposed = await get_current_exposure(bench_id, rounded_time)
 
         if exposed is None:
-            # No data available, return unknown
             logger.warning(f"No exposure data for bench {bench_id} at {rounded_time}")
             return "unknown", None, None
 

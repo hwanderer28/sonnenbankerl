@@ -8,7 +8,7 @@ FastAPI-based REST API service for the Sonnenbankerl application.
 - **URL**: https://sonnenbankerl.ideanexus.cloud
 - **API Docs**: https://sonnenbankerl.ideanexus.cloud/docs
 - **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
-- **Sample Data**: 3 benches in Graz Stadtpark
+- **Data**: Empty by default; populate via precomputation pipeline
 
 ## Project Structure
 
@@ -96,9 +96,12 @@ curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radi
       "distance": 245.3,
       "current_status": "sunny",
       "sun_until": "2025-12-30T18:00:00Z",
-      "remaining_minutes": 210
+      "remaining_minutes": 210,
+      "status_note": null
     }
-  ]
+  ],
+  "window_start": "2025-12-30T00:00:00Z",
+  "window_end": "2026-01-05T23:50:00Z"
 }
 ```
 
@@ -165,7 +168,7 @@ See `database/migrations/` for full schema.
 
 This is a minimal implementation for testing. Future enhancements:
 - ❌ GeoSphere weather API integration (API key needed)
-- ❌ Real OSM bench data (currently 3 sample benches)
+- ❌ Real OSM bench data (load OSM benches via pipeline)
 - ❌ Actual sun position calculations (simplified algorithm)
 - ❌ Line-of-sight calculations with DSM data
 - ❌ Automated tests

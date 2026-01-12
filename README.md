@@ -33,7 +33,7 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
 - **API URL**: https://sonnenbankerl.ideanexus.cloud
 - **Status**: Production, fully operational
 - **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
-- **Sample Data**: 3 benches in Graz Stadtpark
+- **Data**: Empty by default; load via precomputation pipeline
 - **Endpoints**: Health check, benches search, bench details
 - **Documentation**: https://sonnenbankerl.ideanexus.cloud/docs
 
@@ -146,10 +146,8 @@ curl https://sonnenbankerl.ideanexus.cloud/api/benches/1
 - See request/response schemas
 
 **Available Data:**
-- 3 sample benches in Graz Stadtpark area
-- Locations: around 47.07°N, 15.44°E
-- Distance-based spatial search
-- Sun exposure data (simplified for testing)
+- None by default; run the precomputation pipeline after loading OSM benches and rasters
+- Supports distance-based spatial search and sun exposure lookups once data is computed
 
 **For Flutter Integration:**
 See [Mobile App Integration Guide](mobile/README.md) for complete examples.

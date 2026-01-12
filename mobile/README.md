@@ -46,19 +46,9 @@ Future<List<dynamic>> getBenches(double lat, double lon) async {
 }
 ```
 
-### Available Sample Data
+### Data Availability
 
-Currently 3 benches in Graz Stadtpark:
-- Coordinates: ~47.07°N, 15.44°E
-- Use radius: 1000m for testing
-
-**Test coordinates:**
-```dart
-// Graz Stadtpark (has benches)
-final benches = await getBenches(47.07, 15.44);
-
-// Should return 3 benches
-```
+The API serves data only after you import OSM benches and run the precomputation pipeline. Ensure rasters and OSM inputs are loaded before testing queries in the app.
 
 ## Project Structure
 

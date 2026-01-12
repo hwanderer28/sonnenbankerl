@@ -316,7 +316,7 @@ docker-compose logs postgres | grep "Schema initialized"
 # If not, run manually:
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /docker-entrypoint-initdb.d/001_initial_schema.sql
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /docker-entrypoint-initdb.d/002_create_indexes.sql
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /docker-entrypoint-initdb.d/003_sample_data.sql
+# 003_sample_data.sql is now a no-op placeholder (kept for ordering only)
 ```
 
 ---
