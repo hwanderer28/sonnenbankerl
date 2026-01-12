@@ -95,21 +95,29 @@ DECLARE
     updated_count INTEGER := 0;
     bench_record RECORD;
     bench_elevation FLOAT;
-    bench_point_3857 GEOMETRY;
+    bench_point GEOMETRY;
+    raster_srid INTEGER := 4326;
 BEGIN
+    -- Detect raster SRID if available
+    BEGIN
+        SELECT ST_SRID(rast) INTO raster_srid FROM dem_raster LIMIT 1;
+    EXCEPTION WHEN undefined_table THEN
+        raster_srid := 4326;
+    END;
+
     -- Update ALL benches (not just those with NULL elevation)
     FOR bench_record IN
         SELECT id, geom FROM benches
     LOOP
         BEGIN
             -- Transform bench point to match raster coordinate system
-            bench_point_3857 := ST_Transform(bench_record.geom::geometry, 3857);
+            bench_point := ST_Transform(bench_record.geom::geometry, raster_srid);
 
             -- Try to get elevation from DEM raster
             BEGIN
-                SELECT ST_Value(rast, bench_point_3857) INTO bench_elevation
+                SELECT ST_Value(rast, bench_point) INTO bench_elevation
                 FROM dem_raster
-                WHERE ST_Intersects(rast, bench_point_3857)
+                WHERE ST_Intersects(rast, bench_point)
                 LIMIT 1;
 
                 IF bench_elevation IS NOT NULL THEN

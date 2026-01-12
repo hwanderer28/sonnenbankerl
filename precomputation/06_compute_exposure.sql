@@ -95,6 +95,7 @@ CREATE OR REPLACE FUNCTION is_exposed_optimized(
 ) RETURNS BOOLEAN AS $$
 DECLARE
     bench_point GEOMETRY;
+    target_srid INTEGER := 3857;
     distance FLOAT := 1000;  -- Keep at 1km as requested
     step_size FLOAT := 10;   -- Sample every 10m
     i INTEGER;
@@ -112,19 +113,11 @@ BEGIN
         RETURN FALSE;
     END IF;
     
-    -- Transform once
-    bench_point := ST_Transform(bench_geom::geometry, 3857);
-    
-    -- Pre-compute trigonometric values (avoid recalculating in loop)
-    cos_az := cos(radians(azimuth));
-    sin_az := sin(radians(azimuth));
-    tan_el := tan(radians(elevation));
-    
     -- Get DSM raster reference
     IF dsm IS NULL THEN
         SELECT rast INTO dsm_raster_ref
         FROM dsm_raster
-        WHERE ST_Intersects(rast, bench_point)
+        WHERE ST_Intersects(rast, bench_geom::geometry)
         LIMIT 1;
         
         IF dsm_raster_ref IS NULL THEN
@@ -133,6 +126,16 @@ BEGIN
     ELSE
         dsm_raster_ref := dsm;
     END IF;
+
+    target_srid := COALESCE(NULLIF(ST_SRID(dsm_raster_ref), 0), target_srid);
+    
+    -- Transform once to raster SRID
+    bench_point := ST_Transform(bench_geom::geometry, target_srid);
+    
+    -- Pre-compute trigonometric values (avoid recalculating in loop)
+    cos_az := cos(radians(azimuth));
+    sin_az := sin(radians(azimuth));
+    tan_el := tan(radians(elevation));
     
     -- Get observer height
     obs_z := get_dsm_elevation(bench_point, dsm_raster_ref) + 1.2;
@@ -145,7 +148,7 @@ BEGIN
                 ST_X(bench_point) + step_offset * cos_az,
                 ST_Y(bench_point) + step_offset * sin_az
             ),
-            3857
+            target_srid
         );
         
         -- Get terrain height at sample point
