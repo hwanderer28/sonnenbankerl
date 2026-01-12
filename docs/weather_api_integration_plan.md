@@ -213,7 +213,9 @@ async def get_bench_sun_status(bench_id: int) -> Tuple[str, Optional[datetime], 
 | `backend/app/main.py` | MODIFY | ✅ Done | Register weather router |
 | `backend/requirements.txt` | MODIFY | ✅ Done | Add aiohttp |
 | `backend/app/services/exposure.py` | MODIFY | ✅ Done | Weather gate integration |
-| `backend/test_weather.py` | CREATE | ✅ Done | Test script for weather service |
+| `backend/tests/test_weather_integration.py` | CREATE | ✅ Done | Integration test (live API) |
+| `backend/tests/test_weather_unit.py` | CREATE | ✅ Done | Unit tests with mocked API |
+| `backend/pytest.ini` | CREATE | ✅ Done | Pytest configuration |
 
 ---
 
@@ -288,14 +290,14 @@ Response:
 
 ## Testing Checklist
 
-- [ ] Mock GeoSphere API responses
-- [ ] Test sunny detection (`SO > 0`)
-- [ ] Test cloudy detection (`SO = 0`)
-- [ ] Test cache hit/miss
-- [ ] Test cache expiration after TTL
-- [ ] Test API timeout handling
-- [ ] Test API error handling
-- [ ] Test integration with exposure service
+- [x] Mock GeoSphere API responses
+- [x] Test sunny detection (`SO > 0`)
+- [x] Test cloudy detection (`SO = 0`)
+- [x] Test cache hit/miss
+- [x] Test cache expiration after TTL
+- [x] Test API timeout handling
+- [x] Test API error handling
+- [x] Test integration with exposure service
 
 ---
 
@@ -372,18 +374,26 @@ Request → /api/benches/{id}
 
 ### Testing
 
-A test script was created at `backend/test_weather.py` that:
-- Tests direct API calls to GeoSphere
-- Verifies cache mechanism works
-- Tests force refresh functionality
-- Tests helper functions
-- Tests exposure service integration
+**Test files in `backend/tests/`:**
+- `test_weather_unit.py` - Unit tests with mocked API (28 tests)
+- `test_weather_integration.py` - Integration tests against live API
 
-**To run tests:**
+**To run unit tests:**
 ```bash
 cd backend
+source venv/bin/activate
 pip install -r requirements.txt
-python test_weather.py
+pytest tests/test_weather_unit.py -v
+```
+
+**To run integration tests (hits real API):**
+```bash
+pytest tests/test_weather_integration.py -v -s
+```
+
+**To run all tests:**
+```bash
+pytest -v
 ```
 
 **To run the server:**
@@ -405,8 +415,57 @@ Returns `SO` (Sonnenscheindauer/sunshine duration) in seconds for the last 10 mi
 
 ### Next Steps (Future Work)
 
-- [ ] Add unit tests with mocked API responses
-- [ ] Add more weather parameters (temperature, precipitation)
-- [ ] Support multiple stations with fallback
-- [ ] Add SYNOP cloud cover data for more accuracy
-- [ ] Store historical weather data in database
+- [x] Add unit tests with mocked API responses (completed 2026-01-12)
+- [ ] Maybe support multiple stations with fallback
+- [ ] Maybe add SYNOP cloud cover data for more accuracy
+
+---
+
+## Unit Tests (2026-01-12)
+
+### What Was Added
+
+Created comprehensive unit tests with mocked API responses at `backend/tests/test_weather_unit.py`.
+
+**Test Coverage (28 tests):**
+
+| Category | Tests |
+|----------|-------|
+| Sunny Detection | Full sun (600s), Partial sun (180s) |
+| Cloudy Detection | SO = 0 |
+| Cache Behavior | Miss on first call, Hit on second, Force refresh bypass |
+| Cache Expiration | Expires after TTL, Valid within TTL |
+| API Timeout | Returns stale cache, Raises without cache |
+| API Errors | 4xx, 5xx, Returns stale cache on error |
+| Invalid Responses | Wrong format, Missing SO data |
+| Helper Functions | `is_sunny()`, `get_sunshine_seconds()`, Error defaults |
+| Exposure Integration | Shady when cloudy, Skip weather check, DB query when sunny |
+| Status Messages | Full sun, Partial sun, Cloudy |
+| Station Mapping | Known stations, Unknown station fallback |
+
+**Run Unit Tests:**
+```bash
+cd backend
+source venv/bin/activate
+pip install -r requirements.txt
+pytest tests/test_weather_unit.py -v
+```
+
+**Run All Tests:**
+```bash
+pytest -v
+```
+
+**Files Added:**
+- `tests/__init__.py` - Package marker
+- `tests/test_weather_unit.py` - Unit tests with mocked API
+- `tests/test_weather_integration.py` - Integration tests (live API)
+- `pytest.ini` - Pytest configuration (asyncio_mode=auto)
+- Updated `requirements.txt` - Added pytest, pytest-asyncio
+
+**Notes:**
+- Tests use `unittest.mock` to mock aiohttp responses
+- Cache is reset between tests via fixture
+- All 28 unit tests pass
+- Integration tests require network access to GeoSphere API
+

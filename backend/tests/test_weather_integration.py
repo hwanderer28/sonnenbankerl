@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Test script for the GeoSphere Weather API integration.
-Run this before starting the server to verify the weather service works.
+Integration test script for the GeoSphere Weather API.
+This tests against the REAL API - use for manual smoke testing.
 
 Usage:
     cd backend
     source venv/bin/activate
-    python test_weather.py
+    pytest tests/test_weather_integration.py -v -s
+
+Or run directly:
+    python tests/test_weather_integration.py
 """
 
 import asyncio
@@ -18,9 +21,9 @@ sys.path.insert(0, ".")
 
 
 async def test_weather_service():
-    """Test the weather service directly"""
+    """Test the weather service directly against real API"""
     print("=" * 60)
-    print("Testing Weather Service")
+    print("Testing Weather Service (LIVE API)")
     print("=" * 60)
 
     from app.services.weather import (
@@ -125,7 +128,7 @@ async def test_exposure_integration():
 
 async def main():
     print(f"\nTest started at: {datetime.now()}")
-    print(f"Testing GeoSphere Weather API Integration\n")
+    print(f"Testing GeoSphere Weather API Integration (LIVE)\n")
 
     # Test weather service
     success = await test_weather_service()
