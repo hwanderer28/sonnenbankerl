@@ -99,8 +99,8 @@ CREATE OR REPLACE FUNCTION is_exposed_optimized(
 DECLARE
     bench_point GEOMETRY;
     target_srid INTEGER := 3857;
-    distance FLOAT := 1000;  -- Keep at 1km as requested
-    step_size FLOAT := 10;   -- Sample every 10m
+    distance FLOAT := 1000;  -- Defaults for projected (meters)
+    step_size FLOAT := 10;   -- Defaults for projected (meters)
     i INTEGER;
     obs_z FLOAT;
     max_z FLOAT := -9999;
@@ -116,11 +116,11 @@ BEGIN
         RETURN FALSE;
     END IF;
     
-    -- Get DSM raster reference
+    -- Get DSM raster reference with SRID-aware intersection
     IF dsm IS NULL THEN
         SELECT rast INTO dsm_raster_ref
         FROM dsm_raster
-        WHERE ST_Intersects(rast, bench_geom::geometry)
+        WHERE ST_Intersects(rast, ST_Transform(bench_geom::geometry, ST_SRID(rast)))
         LIMIT 1;
         
         IF dsm_raster_ref IS NULL THEN
@@ -131,6 +131,12 @@ BEGIN
     END IF;
 
     target_srid := COALESCE(NULLIF(ST_SRID(dsm_raster_ref), 0), target_srid);
+
+    -- Adjust step/distance if raster is geographic
+    IF target_srid = 4326 THEN
+        distance := 0.01;   -- ~1.1 km at mid-latitudes
+        step_size := 0.0001; -- ~11 m
+    END IF;
     
     -- Transform once to raster SRID
     bench_point := ST_Transform(bench_geom::geometry, target_srid);
