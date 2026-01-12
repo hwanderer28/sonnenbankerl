@@ -162,6 +162,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql PARALLEL SAFE;
 
+-- Convenience overload without explicit DSM
+CREATE OR REPLACE FUNCTION is_exposed_optimized(
+    bench_geom GEOGRAPHY,
+    azimuth FLOAT,
+    elevation FLOAT
+) RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, NULL);
+END;
+$$ LANGUAGE plpgsql PARALLEL SAFE;
+
 -- Legacy function (for compatibility)
 CREATE OR REPLACE FUNCTION is_exposed(
     bench_geom GEOGRAPHY,
