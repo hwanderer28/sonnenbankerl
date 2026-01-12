@@ -169,7 +169,7 @@ CREATE OR REPLACE FUNCTION is_exposed_optimized(
     elevation FLOAT
 ) RETURNS BOOLEAN AS $$
 BEGIN
-    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, NULL);
+    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, NULL::raster);
 END;
 $$ LANGUAGE plpgsql PARALLEL SAFE;
 
