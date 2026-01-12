@@ -200,15 +200,15 @@ SET effective_cache_size = '4GB';
 The `is_exposed_optimized()` function performs:
 
 1. **Sun position**: Calculated using suncalc_postgres extension
-2. **Ray casting**: 1000m ray from bench toward sun (10m steps)
+2. **Ray casting**: 200m ray from bench toward sun (5m steps)
 3. **DSM sampling**: Sample terrain height along ray
 4. **Obstacle detection**: Compare terrain height vs sun line
 5. **Result**: TRUE (sunny) or FALSE (shady)
 
 ### Key Parameters
 
-- **Ray distance**: 1000m (max)
-- **Step size**: 10m (sampling interval)
+- **Ray distance**: 200m (max)
+- **Step size**: 5m (sampling interval)
 - **Bench height**: DEM elevation + 1.2m (sitting height)
 - **Nighttime skip**: Sun elevation ≤ 0° (skipped for performance)
 

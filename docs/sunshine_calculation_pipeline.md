@@ -164,8 +164,8 @@ SET random_page_cost = 1.1;  -- For SSD storage
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `distance` | 1000m | Max ray length for line-of-sight |
-| `step_size` | 10m | Sampling interval along ray |
+| `distance` | 200m | Max ray length for line-of-sight |
+| `step_size` | 5m | Sampling interval along ray |
 | `sitting_height` | 1.2m | Bench height above ground |
 | `graz_latitude` | 47.07°N | Graz city center latitude |
 | `graz_longitude` | 15.44°E | Graz city center longitude |

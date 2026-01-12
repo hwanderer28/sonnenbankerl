@@ -99,8 +99,8 @@ CREATE OR REPLACE FUNCTION is_exposed_optimized(
 DECLARE
     bench_point GEOMETRY;
     target_srid INTEGER := 3857;
-    distance FLOAT := 1000;  -- Defaults for projected (meters)
-    step_size FLOAT := 10;   -- Defaults for projected (meters)
+    distance FLOAT := 200;   -- Defaults for projected (meters)
+    step_size FLOAT := 5;    -- Defaults for projected (meters)
     i INTEGER;
     obs_z FLOAT;
     max_z FLOAT := -9999;
@@ -136,8 +136,8 @@ BEGIN
 
     -- Adjust step/distance if raster is geographic
     IF target_srid = 4326 THEN
-        distance := 0.01;   -- ~1.1 km at mid-latitudes
-        step_size := 0.0001; -- ~11 m
+        distance := 0.002;    -- ~200 m
+        step_size := 0.00002; -- ~2 m
     END IF;
     
     -- Transform once to raster SRID
