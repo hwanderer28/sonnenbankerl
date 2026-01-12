@@ -22,7 +22,7 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR/infrastructure/docker"
 
-PSQL_CMD="docker-compose --env-file ../../.env exec -T postgres psql -U postgres -d sonnenbankerl"
+PSQL_CMD="docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl"
 
 print_header() {
   echo "=============================================="
@@ -43,7 +43,7 @@ print_header() {
 
 check_raster_files() {
   local missing=0
-  for f in ../../data/raw/dsm_graz_1m.tif ../../data/raw/dem_graz.tif; do
+  for f in data/raw/dsm_graz_1m.tif data/raw/dem_graz.tif; do
     if [[ ! -f "$f" ]]; then
       echo "Missing raster file: $f"
       missing=1
@@ -66,8 +66,8 @@ import_rasters() {
   echo "Step 1: Importing rasters (DSM/DEM)..."
   echo "----------------------------------------------"
   check_raster_files
-  docker-compose --env-file ../../.env exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
-  docker-compose --env-file ../../.env exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
+  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
+  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 4326 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
   $PSQL_CMD -f /precomputation/02_import_rasters.sql
   echo ""
 }
