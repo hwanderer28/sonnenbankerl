@@ -94,10 +94,17 @@ BEGIN
 
     bench_point := ST_Transform(bench_geom::geometry, 3857);
 
-    -- Build a DEM raster covering the 8 km buffer around the bench
+    -- Build a DEM raster covering the 8 km buffer around the bench (prefer downsampled 10m DEM)
     SELECT ST_Union(rast) INTO dem_rast
-    FROM dem_raster
+    FROM dem_raster_10m
     WHERE ST_Intersects(rast, ST_Buffer(bench_point, p_max_distance));
+
+    -- Fallback to full-res DEM if 10m not available
+    IF dem_rast IS NULL THEN
+        SELECT ST_Union(rast) INTO dem_rast
+        FROM dem_raster
+        WHERE ST_Intersects(rast, ST_Buffer(bench_point, p_max_distance));
+    END IF;
 
     IF dem_rast IS NULL THEN
         RAISE EXCEPTION 'DEM raster not found near bench %', p_bench_id;

@@ -78,10 +78,17 @@ import_rasters() {
   echo "----------------------------------------------"
   check_raster_files
   # Drop old rasters to avoid relation-exists errors
-  docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "DROP TABLE IF EXISTS dsm_raster CASCADE; DROP TABLE IF EXISTS dem_raster CASCADE;"
+  docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "DROP TABLE IF EXISTS dsm_raster CASCADE; DROP TABLE IF EXISTS dem_raster CASCADE; DROP TABLE IF EXISTS dem_raster_10m CASCADE;"
   # Import with tiling to reduce memory footprint; adjust SRID if your GeoTIFFs are 4326
   docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M -t 200x200 /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
   docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M -t 200x200 /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
+  # Downsample DEM to 10m tiles for horizon computation
+  docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "\
+    DROP TABLE IF EXISTS dem_raster_10m CASCADE; \
+    CREATE TABLE dem_raster_10m AS \
+      SELECT ST_Tile(ST_Resample(rast, 10, -10), 512, 512) AS rast FROM dem_raster; \
+    CREATE INDEX IF NOT EXISTS idx_dem10_st_convexhull ON dem_raster_10m USING GIST (ST_ConvexHull(rast)); \
+  "
   $PSQL_CMD -f /precomputation/02_import_rasters.sql
   echo ""
 }
