@@ -7,6 +7,10 @@
 -- - Optimized line-of-sight calculations
 -- - Efficient batch processing
 
+-- Disable JIT for raster-heavy operations (stability on some platforms)
+SET jit = off;
+SET max_parallel_workers_per_gather = 0;
+
 -- Function to detect available CPU cores and configure accordingly
 CREATE OR REPLACE FUNCTION configure_performance_settings() RETURNS TEXT AS $$
 DECLARE
@@ -94,16 +98,20 @@ BEGIN
 
     bench_point := ST_Transform(bench_geom::geometry, 3857);
 
-    -- Build a DEM raster covering the 8 km buffer around the bench (prefer downsampled 10m DEM)
-    SELECT ST_Union(rast) INTO dem_rast
+    -- Fetch a single DEM tile intersecting the buffer (prefer downsampled 10m DEM)
+    SELECT rast INTO dem_rast
     FROM dem_raster_10m
-    WHERE ST_Intersects(rast, ST_Buffer(bench_point, p_max_distance));
+    WHERE ST_Intersects(rast, ST_Buffer(bench_point, p_max_distance))
+    ORDER BY ST_Distance(ST_Centroid(ST_ConvexHull(rast)), bench_point)
+    LIMIT 1;
 
     -- Fallback to full-res DEM if 10m not available
     IF dem_rast IS NULL THEN
-        SELECT ST_Union(rast) INTO dem_rast
+        SELECT rast INTO dem_rast
         FROM dem_raster
-        WHERE ST_Intersects(rast, ST_Buffer(bench_point, p_max_distance));
+        WHERE ST_Intersects(rast, ST_Buffer(bench_point, p_max_distance))
+        ORDER BY ST_Distance(ST_Centroid(ST_ConvexHull(rast)), bench_point)
+        LIMIT 1;
     END IF;
 
     IF dem_rast IS NULL THEN
@@ -282,14 +290,15 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- Get DSM raster reference with SRID-aware intersection (union tiles around bench)
+    -- Get DSM raster reference with SRID-aware intersection (single tile, closest to bench)
     IF dsm IS NULL THEN
-        SELECT ST_Union(rast), ST_SRID(rast) INTO dsm_raster_ref, target_srid
+        SELECT rast, ST_SRID(rast) INTO dsm_raster_ref, target_srid
         FROM dsm_raster
         WHERE ST_Intersects(
             rast,
             ST_Buffer(ST_Transform(bench_geom::geometry, ST_SRID(rast)), distance + 10)
         )
+        ORDER BY ST_Distance(ST_Centroid(ST_ConvexHull(rast)), ST_Transform(bench_geom::geometry, ST_SRID(rast)))
         LIMIT 1;
 
         IF dsm_raster_ref IS NULL THEN
