@@ -30,22 +30,22 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
 ## Project Status
 
 ### ✅ Backend - DEPLOYED & LIVE
-- **API URL**: https://sonnenbankerl.ideanexus.cloud
+- **API URL**: https://sonnenbankerl.ideanexus.cloud (local: http://localhost:8000)
 - **Status**: Production, fully operational
 - **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
-- **Data**: Empty by default; load via precomputation pipeline
+- **Data**: 21 benches (Stadtpark subset) from `data/osm/graz_benches.geojson`
+- **Pipeline**: Weekly exposure precomputation in DB (timestamps + sun_positions + exposure)
 - **Endpoints**: Health check, benches search, bench details
 - **Documentation**: https://sonnenbankerl.ideanexus.cloud/docs
 
 ### 🚧 In Progress
 - Mobile app development (Flutter)
+- Weather gate: currently skipped for local testing; re-enable once network is stable
 
-### 📋 Planned
-- Real OSM bench data import
-- GeoSphere Austria weather API integration
-- Actual sun position calculations (suncalc)
-- Line-of-sight algorithm with DSM data
-- Precomputation pipeline
+### 📋 Planned / Next
+- Automate GeoJSON-driven bench import (replace hardcoded INSERTs)
+- Refine LOS tuning and canopy handling
+- Re-enable live weather gate by default
 
 ## Features
 
@@ -146,11 +146,30 @@ curl https://sonnenbankerl.ideanexus.cloud/api/benches/1
 - See request/response schemas
 
 **Available Data:**
-- None by default; run the precomputation pipeline after loading OSM benches and rasters
-- Supports distance-based spatial search and sun exposure lookups once data is computed
+- 21 benches from `data/osm/graz_benches.geojson` (Stadtpark subset) after import
+- Run the precomputation pipeline after importing benches and rasters to populate exposure
+
+**Data refresh (local/CLI):**
+```
+cd infrastructure/docker
+# clean
+psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
+# import benches (21) via precomputation/03_import_benches.sql or manual INSERT
+psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+# timestamps + sun positions
+psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+# exposure
+psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+```
 
 **For Flutter Integration:**
 See [Mobile App Integration Guide](mobile/README.md) for complete examples.
+
+### 🌐 Frontend test page
+- Path: `frontend/index.html` (Leaflet + MapTiler toner)
+- Markers: yellow=sunny, blue=shady, popups show `sun_until` / `remaining_minutes`
+- Serve locally to avoid CORS: `cd frontend && python -m http.server 3000` then open http://localhost:3000
 
 ### 🔧 Backend Development
 

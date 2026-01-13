@@ -58,9 +58,12 @@ Common resolver names: `letsencrypt`, `le`, `default`
 
 ### 4. Domain Name
 
-The domain you'll use for the API (e.g., `api.sonnenbankerl.com`)
+Domains you'll use:
+- API: `sonnenbankerl-api.ideanexus.cloud`
+- Frontend: `sonnenbankerl.ideanexus.cloud`
 
-**Important:** Ensure DNS A record points to your VPS IP before deployment.
+**Important:** Ensure DNS A records point to your VPS IP before deployment.
+
 
 ## Configuration Steps
 
@@ -76,10 +79,13 @@ nano .env
 
 ```bash
 # Your API domain
-DOMAIN=api.sonnenbankerl.com
+API_DOMAIN=sonnenbankerl-api.ideanexus.cloud
+
+# Your frontend domain
+FRONTEND_DOMAIN=sonnenbankerl.ideanexus.cloud
 
 # Your Traefik network name (check with: docker network ls)
-TRAEFIK_NETWORK=traefik
+TRAEFIK_NETWORK=traefik_proxy
 
 # Your Traefik entry point for HTTPS (usually 'websecure')
 TRAEFIK_ENTRYPOINT=websecure
@@ -92,7 +98,7 @@ CERT_RESOLVER=letsencrypt
 
 ```bash
 # Check if Traefik network exists
-docker network inspect traefik
+docker network inspect traefik_proxy
 
 # If it doesn't exist, check what Traefik uses
 docker inspect traefik | grep -A 20 Networks
@@ -102,7 +108,7 @@ docker inspect traefik | grep -A 20 Networks
 
 ```bash
 cd infrastructure/docker
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 ```
 
 ### 4. Verify Traefik Picked Up Service
@@ -114,12 +120,13 @@ docker logs traefik | grep sonnenbankerl
 
 **Check Traefik dashboard** (if enabled):
 - Visit your Traefik dashboard
-- Look for `sonnenbankerl-api` router
-- Verify it's in "green" status
+- Look for `sonnenbankerl-api` and `sonnenbankerl-frontend` routers
+- Verify they're in "green" status
 
-**Test the endpoint:**
+**Test the endpoints:**
 ```bash
-curl https://api.sonnenbankerl.com/api/health
+curl https://sonnenbankerl-api.ideanexus.cloud/api/health
+curl -I https://sonnenbankerl.ideanexus.cloud
 ```
 
 ## Docker Compose Labels Explained
@@ -132,10 +139,10 @@ labels:
   - "traefik.enable=true"
   
   # Specify which Docker network Traefik should use
-  - "traefik.docker.network=traefik"
+  - "traefik.docker.network=traefik_proxy"
   
-  # Routing rule: match requests to api.sonnenbankerl.com
-  - "traefik.http.routers.sonnenbankerl-api.rule=Host(`api.sonnenbankerl.com`)"
+  # Routing rule: match requests to sonnenbankerl-api.ideanexus.cloud
+  - "traefik.http.routers.sonnenbankerl-api.rule=Host(`sonnenbankerl-api.ideanexus.cloud`)"
   
   # Use the 'websecure' entry point (HTTPS)
   - "traefik.http.routers.sonnenbankerl-api.entrypoints=websecure"
@@ -150,9 +157,35 @@ labels:
   - "traefik.http.services.sonnenbankerl-api.loadbalancer.server.port=8000"
 ```
 
+### Frontend Labels
+
+```yaml
+labels:
+  # Enable Traefik for this container
+  - "traefik.enable=true"
+  
+  # Specify which Docker network Traefik should use
+  - "traefik.docker.network=traefik_proxy"
+  
+  # Routing rule: match requests to sonnenbankerl.ideanexus.cloud
+  - "traefik.http.routers.sonnenbankerl-frontend.rule=Host(`sonnenbankerl.ideanexus.cloud`)"
+  
+  # Use the 'websecure' entry point (HTTPS)
+  - "traefik.http.routers.sonnenbankerl-frontend.entrypoints=websecure"
+  
+  # Enable TLS
+  - "traefik.http.routers.sonnenbankerl-frontend.tls=true"
+  
+  # Use Let's Encrypt certificate resolver
+  - "traefik.http.routers.sonnenbankerl-frontend.tls.certresolver=letsencrypt"
+  
+  # Frontend service runs on port 80 inside container
+  - "traefik.http.services.sonnenbankerl-frontend.loadbalancer.server.port=80"
+```
+
 ## Optional: Rate Limiting
 
-Uncomment these labels in `docker-compose.prod.yml` to enable rate limiting:
+Uncomment these labels in `docker-compose.yml` to enable rate limiting:
 
 ```yaml
 labels:
@@ -190,7 +223,7 @@ labels:
 
 **1. Check container is running:**
 ```bash
-docker-compose -f docker-compose.prod.yml ps
+docker-compose ps
 ```
 
 **2. Verify container is on Traefik network:**
@@ -216,8 +249,8 @@ curl http://CONTAINER_IP:8000/api/health
 
 **1. Verify DNS points to VPS:**
 ```bash
-nslookup api.sonnenbankerl.com
-dig api.sonnenbankerl.com
+nslookup sonnenbankerl-api.ideanexus.cloud
+dig sonnenbankerl-api.ideanexus.cloud
 ```
 
 **2. Check Traefik certificate logs:**
@@ -243,8 +276,8 @@ docker network ls
 TRAEFIK_NETWORK=actual_network_name
 
 # Recreate containers
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose down
+docker-compose up -d
 ```
 
 ## Example Traefik Configurations
@@ -310,13 +343,13 @@ After successful deployment:
 
 1. **Test all API endpoints**
    ```bash
-   curl https://api.sonnenbankerl.com/api/health
-   curl https://api.sonnenbankerl.com/api/benches?lat=47.07&lon=15.44&radius=1000
+   curl https://sonnenbankerl-api.ideanexus.cloud/api/health
+   curl https://sonnenbankerl-api.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000
    ```
 
 2. **Monitor logs**
    ```bash
-   docker-compose -f docker-compose.prod.yml logs -f api
+   docker-compose logs -f api
    ```
 
 3. **Set up monitoring** (see infrastructure/README.md)

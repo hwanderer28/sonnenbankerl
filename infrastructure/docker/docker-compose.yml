@@ -38,22 +38,48 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sonnenbankerl}
       ENVIRONMENT: production
       API_PORT: 8000
-      ALLOWED_ORIGINS: "*"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://sonnenbankerl.ideanexus.cloud}
     networks:
       - internal
       - traefik_proxy
+      - default
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.sonnenbankerl-api.rule=Host(`sonnenbankerl.ideanexus.cloud`)"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.sonnenbankerl-api.rule=Host(`sonnenbankerl-api.ideanexus.cloud`)"
+      - "traefik.http.routers.sonnenbankerl-api.entrypoints=websecure"
       - "traefik.http.routers.sonnenbankerl-api.tls=true"
       - "traefik.http.routers.sonnenbankerl-api.tls.certresolver=letsencrypt"
       - "traefik.http.services.sonnenbankerl-api.loadbalancer.server.port=8000"
+
+  frontend:
+    image: nginx:alpine
+    container_name: sonnenbankerl-frontend
+    depends_on:
+      - api
+    volumes:
+      - ../../frontend:/usr/share/nginx/html:ro
+    networks:
+      - traefik_proxy
+      - default
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.sonnenbankerl-frontend.rule=Host(`sonnenbankerl.ideanexus.cloud`)"
+      - "traefik.http.routers.sonnenbankerl-frontend.entrypoints=websecure"
+      - "traefik.http.routers.sonnenbankerl-frontend.tls=true"
+      - "traefik.http.routers.sonnenbankerl-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.sonnenbankerl-frontend.loadbalancer.server.port=80"
 
 networks:
   internal:
   traefik_proxy:
     external: true
+    name: traefik_proxy
 
 volumes:
   postgres_data:

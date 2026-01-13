@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 import logging
 
@@ -14,7 +15,7 @@ def round_to_10min(dt: datetime) -> datetime:
 
 
 async def get_bench_sun_status(
-    bench_id: int, skip_weather_check: bool = False
+    bench_id: int, skip_weather_check: bool = True
 ) -> Tuple[str, Optional[datetime], Optional[int]]:
     """
     Get current sun status for a bench
@@ -29,7 +30,7 @@ async def get_bench_sun_status(
         - sun_until: Timestamp when status changes (or None)
         - remaining_minutes: Minutes until status changes (or None)
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     rounded_time = round_to_10min(now)
 
     try:

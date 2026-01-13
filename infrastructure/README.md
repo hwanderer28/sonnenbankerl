@@ -7,9 +7,8 @@ Infrastructure-as-code and deployment configurations for the Sonnenbankerl appli
 ```
 infrastructure/
 ├── docker/
-│   ├── docker-compose.yml          # Development environment
-│   ├── docker-compose.prod.yml     # Production deployment with Traefik
-│   └── Dockerfile.precompute       # Precomputation container
+│   ├── docker-compose.yml          # Stack with Postgres, API, frontend (Traefik labels)
+│   └── Dockerfile.postgres         # Postgres with PostGIS/TimescaleDB
 ├── systemd/
 │   ├── api.service                 # API service unit
 │   └── precompute.timer            # Scheduled precomputation
@@ -77,7 +76,7 @@ The production deployment integrates with your existing Traefik setup using Dock
 
 **Key configuration needed:**
 1. **Traefik network name** - The external network Traefik monitors
-2. **Domain name** - e.g., `api.sonnenbankerl.com`
+2. **Domain name** - e.g., `sonnenbankerl-api.ideanexus.cloud`
 3. **Certificate resolver** - Your Let's Encrypt resolver name
 4. **Entry points** - Typically `websecure` for HTTPS
 
@@ -102,55 +101,44 @@ POSTGRES_PASSWORD=STRONG_PASSWORD
 
 # API
 API_PORT=8000
+ALLOWED_ORIGINS=https://sonnenbankerl.ideanexus.cloud
 GEOSPHERE_API_KEY=your_api_key
 
 # Traefik
-DOMAIN=api.sonnenbankerl.com
-TRAEFIK_NETWORK=traefik  # Your Traefik network name
+API_DOMAIN=sonnenbankerl-api.ideanexus.cloud
+FRONTEND_DOMAIN=sonnenbankerl.ideanexus.cloud
+TRAEFIK_NETWORK=traefik_proxy  # Your Traefik network name
 CERT_RESOLVER=letsencrypt  # Your certificate resolver name
 ```
 
-#### 2. Update docker-compose.prod.yml
+#### 2. Update docker-compose.yml
 
-Edit `infrastructure/docker/docker-compose.prod.yml` to match your Traefik setup:
+Edit `infrastructure/docker/docker-compose.yml` for your Traefik setup:
 
-```yaml
-networks:
-  traefik:
-    external: true
-    name: traefik  # Change to your Traefik network name
-```
-
-Update labels if your Traefik configuration differs:
-
-```yaml
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.sonnenbankerl-api.rule=Host(`${DOMAIN}`)"
-  - "traefik.http.routers.sonnenbankerl-api.entrypoints=websecure"
-  - "traefik.http.routers.sonnenbankerl-api.tls.certresolver=${CERT_RESOLVER}"
-```
+- Ensure the external network name matches your Traefik network (`traefik_proxy` by default).
+- API router host: `sonnenbankerl-api.ideanexus.cloud`, entrypoint `websecure`, resolver `letsencrypt`.
+- Frontend router host: `sonnenbankerl.ideanexus.cloud`, entrypoint `websecure`, resolver `letsencrypt`.
+- Both API and frontend services should join `traefik_proxy`.
 
 #### 3. Deploy with Docker Compose
 
 ```bash
 cd infrastructure/docker
 
-# Deploy production stack
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 
 # Check status
-docker-compose -f docker-compose.prod.yml ps
+docker-compose ps
 
 # View logs
-docker-compose -f docker-compose.prod.yml logs -f api
+docker-compose logs -f api
 ```
 
 #### 4. Run Database Migrations
 
 ```bash
 # Access postgres container
-docker-compose -f docker-compose.prod.yml exec postgres psql -U postgres -d sonnenbankerl
+docker-compose exec postgres psql -U postgres -d sonnenbankerl
 
 # Or run migrations from host
 psql postgresql://postgres:PASSWORD@localhost:5432/sonnenbankerl -f ../../database/migrations/001_initial_schema.sql
@@ -163,10 +151,10 @@ psql postgresql://postgres:PASSWORD@localhost:5432/sonnenbankerl -f ../../databa
 # Visit your Traefik dashboard or check logs
 
 # Test API health endpoint
-curl https://api.sonnenbankerl.com/api/health
+curl https://sonnenbankerl-api.ideanexus.cloud/api/health
 
 # Check SSL certificate
-curl -vI https://api.sonnenbankerl.com
+curl -vI https://sonnenbankerl-api.ideanexus.cloud
 ```
 
 ### Alternative: Systemd Services
@@ -201,12 +189,26 @@ services:
       - "traefik.enable=true"
       
       # HTTP Router
-      - "traefik.http.routers.sonnenbankerl-api.rule=Host(`api.sonnenbankerl.com`)"
+      - "traefik.http.routers.sonnenbankerl-api.rule=Host(`sonnenbankerl-api.ideanexus.cloud`)"
       - "traefik.http.routers.sonnenbankerl-api.entrypoints=websecure"
       - "traefik.http.routers.sonnenbankerl-api.tls.certresolver=letsencrypt"
       
       # Service configuration
       - "traefik.http.services.sonnenbankerl-api.loadbalancer.server.port=8000"
+```
+
+### Frontend Labels (Docker Compose)
+
+```yaml
+services:
+  frontend:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.sonnenbankerl-frontend.rule=Host(`sonnenbankerl.ideanexus.cloud`)"
+      - "traefik.http.routers.sonnenbankerl-frontend.entrypoints=websecure"
+      - "traefik.http.routers.sonnenbankerl-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.sonnenbankerl-frontend.loadbalancer.server.port=80"
 ```
 
 ### With Rate Limiting
@@ -232,7 +234,7 @@ labels:
   
   # CORS middleware
   - "traefik.http.middlewares.api-cors.headers.accesscontrolallowmethods=GET,OPTIONS,POST"
-  - "traefik.http.middlewares.api-cors.headers.accesscontrolalloworigin=*"
+  - "traefik.http.middlewares.api-cors.headers.accesscontrolalloworigin=https://sonnenbankerl.ideanexus.cloud"
   - "traefik.http.middlewares.api-cors.headers.accesscontrolallowheaders=Content-Type,Authorization"
   
   # Apply multiple middlewares
@@ -303,13 +305,13 @@ crontab -e
 **Docker Compose:**
 ```bash
 # View API logs
-docker-compose -f docker-compose.prod.yml logs -f api
+docker-compose logs -f api
 
 # View all logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose logs -f
 
 # View last 100 lines
-docker-compose -f docker-compose.prod.yml logs --tail=100 api
+docker-compose logs --tail=100 api
 ```
 
 **Systemd:**
@@ -343,7 +345,7 @@ sudo journalctl -u api.service -n 100
 
 ```bash
 # Connect to PostgreSQL
-docker-compose -f docker-compose.prod.yml exec postgres psql -U postgres -d sonnenbankerl
+docker-compose exec postgres psql -U postgres -d sonnenbankerl
 
 # Check table sizes
 SELECT pg_size_pretty(pg_total_relation_size('exposure'));
@@ -413,7 +415,7 @@ Scale API instances for increased load:
 
 ```bash
 # Scale to 3 replicas
-docker-compose -f docker-compose.prod.yml up -d --scale api=3
+docker-compose up -d --scale api=3
 
 # Traefik automatically load-balances across replicas
 ```
@@ -454,7 +456,7 @@ docker logs traefik | grep sonnenbankerl
 docker inspect sonnenbankerl-api | grep -A 20 Labels
 
 # Check API is running
-docker-compose -f docker-compose.prod.yml ps
+docker-compose ps
 
 # Test API directly (without Traefik)
 curl http://localhost:8000/api/health
@@ -467,7 +469,7 @@ curl http://localhost:8000/api/health
 docker logs traefik | grep -i cert
 
 # Verify domain DNS points to VPS
-nslookup api.sonnenbankerl.com
+nslookup sonnenbankerl-api.ideanexus.cloud
 
 # Force certificate renewal (Traefik v2)
 # Remove certificate and restart Traefik
@@ -477,13 +479,13 @@ nslookup api.sonnenbankerl.com
 
 ```bash
 # Verify PostgreSQL is running
-docker-compose -f docker-compose.prod.yml ps postgres
+docker-compose ps postgres
 
 # Check database logs
-docker-compose -f docker-compose.prod.yml logs postgres
+docker-compose logs postgres
 
 # Test connection
-docker-compose -f docker-compose.prod.yml exec postgres psql -U postgres -d sonnenbankerl -c "SELECT 1;"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT 1;"
 ```
 
 ### Out of Disk Space

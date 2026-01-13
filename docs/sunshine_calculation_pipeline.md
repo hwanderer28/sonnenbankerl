@@ -16,15 +16,15 @@ This document describes the **weekly rolling computation pipeline** for sun expo
 
 ```
 Data Flow:
-Benches (50) → Timestamps (weekly) → Sun Positions → Exposure (final)
-              ↑                                           ↓
-              └────────────── Raster Data (DEM/DSM) ←─────┘
+Benches (21, Stadtpark subset) → Timestamps (weekly) → Sun Positions → Exposure (final)
+               ↑                                               ↓
+               └────────────── Raster Data (DEM/DSM) ←─────────┘
 ```
 
 ### Components
 
 1. **Benches** (`03_import_benches.sql`)
-   - 50 park benches from OSM in Graz
+   - 21 park benches from `data/osm/graz_benches.geojson`
    - Elevation extracted from DEM raster (+ 1.2m sitting height)
    - Stored as GEOGRAPHY(POINT, 4326)
 
@@ -40,7 +40,7 @@ Benches (50) → Timestamps (weekly) → Sun Positions → Exposure (final)
 
 4. **Exposure** (`06_compute_exposure.sql`)
    - Line-of-sight analysis using DSM raster
-   - 50 benches × 365 daylight timestamps = ~18,250 records
+   - 21 benches × ~1000 timestamps (day/night) ≈ 21k records/week
    - TRUE (sunny) or FALSE (shady)
 
 5. **Results** (`07_compute_next_week.sql`)
@@ -61,12 +61,8 @@ Benches (50) → Timestamps (weekly) → Sun Positions → Exposure (final)
 ```bash
 cd infrastructure/docker
 
-# Step 1: Clear old data and import benches with corrected elevations
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "
-DELETE FROM exposure;
-DELETE FROM sun_positions;
-DELETE FROM timestamps;
-"
+# Step 1: Clear old data and import benches (21 benches from geojson)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
 
 # Step 2: Generate weekly timestamps

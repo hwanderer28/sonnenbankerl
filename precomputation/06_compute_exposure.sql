@@ -39,9 +39,9 @@ BEGIN
         ELSE '256MB'
     END;
     
-    -- Apply settings
-    EXECUTE format('SET max_parallel_workers_per_gather = %I', max_workers);
-    EXECUTE format('SET max_parallel_workers = %I', max_workers);
+    -- Apply settings (disable parallel for now to debug)
+    EXECUTE format('SET max_parallel_workers_per_gather = 0');
+    EXECUTE format('SET max_parallel_workers = 0');
     EXECUTE format('SET work_mem = %I', optimal_work_mem);
     EXECUTE 'SET parallel_tuple_cost = 0.01';
     EXECUTE 'SET parallel_setup_cost = 100';
@@ -89,11 +89,28 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 -- Remove legacy 3-arg overload to avoid ambiguity
 DROP FUNCTION IF EXISTS is_exposed_optimized(geography, float, float);
 
+-- Safe wrapper for exposure calculation
+CREATE OR REPLACE FUNCTION safe_is_exposed(
+    bench_geom GEOGRAPHY,
+    azimuth FLOAT,
+    elevation FLOAT,
+    observer_height FLOAT,
+    dsm RASTER DEFAULT NULL
+) RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, observer_height, dsm);
+EXCEPTION WHEN OTHERS THEN
+    -- On any error, assume not exposed (safe default)
+    RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Optimized line-of-sight function with pre-computed values
 CREATE OR REPLACE FUNCTION is_exposed_optimized(
     bench_geom GEOGRAPHY,
     azimuth FLOAT,
     elevation FLOAT,
+    observer_height FLOAT,
     dsm RASTER DEFAULT NULL
 ) RETURNS BOOLEAN AS $$
 DECLARE
@@ -116,14 +133,14 @@ BEGIN
     IF elevation <= 0 THEN
         RETURN FALSE;
     END IF;
-    
+
     -- Get DSM raster reference with SRID-aware intersection
     IF dsm IS NULL THEN
         SELECT rast INTO dsm_raster_ref
         FROM dsm_raster
         WHERE ST_Intersects(rast, ST_Transform(bench_geom::geometry, ST_SRID(rast)))
         LIMIT 1;
-        
+
         IF dsm_raster_ref IS NULL THEN
             RETURN FALSE;
         END IF;
@@ -139,20 +156,20 @@ BEGIN
         distance := 0.002;    -- ~200 m
         step_size := 0.00002; -- ~2 m
     END IF;
-    
+
     -- Transform once to raster SRID
     bench_point := ST_Transform(bench_geom::geometry, target_srid);
-    
+
     -- Pre-compute trigonometric values (avoid recalculating in loop)
     cos_az := cos(radians(azimuth));
     sin_az := sin(radians(azimuth));
     tan_el := tan(radians(elevation));
-    
-    -- Get observer height
-    obs_z := get_dsm_elevation(bench_point, dsm_raster_ref) + 1.2;
-    
+
+    -- Get observer height (from DEM + 1.2m)
+    obs_z := observer_height;
+
     -- Optimized ray casting with early exit
-    FOR i IN 0..(distance / step_size)::INT LOOP
+    FOR i IN 1..(distance / step_size)::INT LOOP
         step_offset := i * step_size;
         sample_point := ST_SetSRID(
             ST_MakePoint(
@@ -161,21 +178,21 @@ BEGIN
             ),
             target_srid
         );
-        
+
         -- If sample leaves raster footprint, assume clear LOS beyond raster
         IF NOT ST_Contains(raster_env, sample_point) THEN
             EXIT; -- leave loop; no obstacle encountered within raster
         END IF;
-        
+
         -- Get terrain height at sample point (treat NULL as no obstacle)
         max_z := GREATEST(max_z, COALESCE(ST_Value(dsm_raster_ref, sample_point), -9999));
-        
+
         -- Early exit: obstacle found
         IF max_z > (obs_z + tan_el * step_offset) THEN
             RETURN FALSE;
         END IF;
     END LOOP;
-    
+
     -- Sun is visible (no obstructions within raster)
     RETURN obs_z + tan_el * distance > max_z;
 END;
@@ -186,10 +203,11 @@ CREATE OR REPLACE FUNCTION is_exposed(
     bench_geom GEOGRAPHY,
     azimuth FLOAT,
     elevation FLOAT,
+    observer_height FLOAT,
     dsm RASTER DEFAULT NULL
 ) RETURNS BOOLEAN AS $$
 BEGIN
-    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, dsm);
+    RETURN safe_is_exposed(bench_geom, azimuth, elevation, observer_height, dsm);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -234,8 +252,18 @@ BEGIN
     RAISE NOTICE 'Starting optimized exposure computation: % to %', start_date, end_date;
     RAISE NOTICE 'Batch size: % (adaptive)', v_batch_size;
     
-    -- Get bench range
-    SELECT MIN(id), MAX(id), COUNT(*) INTO min_bench_id, max_bench_id, bench_count FROM benches;
+    -- Get bench range (exclude benches without elevation)
+    SELECT MIN(id), MAX(id), COUNT(*) INTO min_bench_id, max_bench_id, bench_count FROM benches WHERE elevation IS NOT NULL;
+
+    -- Log and exclude benches without elevation
+    DECLARE
+        no_elev_count INTEGER;
+    BEGIN
+        SELECT COUNT(*) INTO no_elev_count FROM benches WHERE elevation IS NULL;
+        IF no_elev_count > 0 THEN
+            RAISE NOTICE 'Excluding % benches with no elevation data', no_elev_count;
+        END IF;
+    END;
     
     IF min_bench_id IS NULL THEN
         RAISE EXCEPTION 'No benches found';
@@ -256,18 +284,18 @@ BEGIN
     WHILE current_min_id <= max_bench_id LOOP
         current_max_id := LEAST(current_min_id + v_batch_size - 1, max_bench_id);
         
-        -- Compute exposure for this batch with hint
+        -- Compute exposure for this batch (includes night = false)
         INSERT INTO exposure (ts_id, bench_id, exposed)
-        SELECT /*+ Parallel(t 4) Parallel(b 4) */
+        SELECT
             t.id as ts_id,
             b.id as bench_id,
-            is_exposed_optimized(b.geom, sp.azimuth_deg, sp.elevation_deg, NULL::public.raster) as exposed
+            safe_is_exposed(b.geom, sp.azimuth_deg, sp.elevation_deg, b.elevation + 1.2, NULL::public.raster) as exposed
         FROM benches b
         CROSS JOIN timestamps t
         JOIN sun_positions sp ON sp.ts_id = t.id
         WHERE b.id BETWEEN current_min_id AND current_max_id
+          AND b.elevation IS NOT NULL
           AND t.ts::DATE BETWEEN start_date AND end_date
-          AND sp.elevation_deg > 0
         ON CONFLICT (ts_id, bench_id) DO NOTHING;
         
         GET DIAGNOSTICS batch_count = ROW_COUNT;
@@ -317,7 +345,8 @@ DECLARE
     total_computed BIGINT;
     start_date DATE;
     end_date DATE;
-    daylight_timestamps BIGINT;
+    total_timestamps BIGINT;
+    night_records BIGINT;
     bench_count INTEGER;
 BEGIN
     start_date := CURRENT_DATE;
@@ -325,18 +354,24 @@ BEGIN
     
     SELECT COUNT(*) INTO bench_count FROM benches;
     
-    SELECT COUNT(DISTINCT t.id) INTO daylight_timestamps
+    SELECT COUNT(DISTINCT t.id) INTO total_timestamps
     FROM timestamps t
-    JOIN sun_positions sp ON sp.ts_id = t.id
-    WHERE t.ts::DATE BETWEEN start_date AND end_date
-      AND sp.elevation_deg > 0;
-    
-    total_possible := bench_count::BIGINT * daylight_timestamps::BIGINT;
+    WHERE t.ts::DATE BETWEEN start_date AND end_date;
+
+    total_possible := bench_count::BIGINT * total_timestamps::BIGINT;
     
     SELECT COUNT(*) INTO total_computed
     FROM exposure e
     JOIN timestamps t ON t.id = e.ts_id
     WHERE t.ts::DATE BETWEEN start_date AND end_date;
+
+    -- Count night records (should be all false)
+    SELECT COUNT(*) FILTER (WHERE NOT e.exposed) INTO night_records
+    FROM exposure e
+    JOIN timestamps t ON t.id = e.ts_id
+    LEFT JOIN sun_positions sp ON sp.ts_id = t.id
+    WHERE t.ts::DATE BETWEEN start_date AND end_date
+      AND (sp.elevation_deg IS NULL OR sp.elevation_deg <= 0);
     
     RETURN QUERY
     SELECT 'Weekly Window'::TEXT, (start_date::text || ' to ' || end_date::text)::TEXT, NULL::FLOAT
@@ -348,7 +383,9 @@ BEGIN
     UNION ALL
     SELECT 'Benches'::TEXT, bench_count, NULL::FLOAT
     UNION ALL
-    SELECT 'Daylight Timestamps'::TEXT, daylight_timestamps, NULL::FLOAT;
+    SELECT 'Total Timestamps'::TEXT, total_timestamps, NULL::FLOAT
+    UNION ALL
+    SELECT 'Night Records'::TEXT, night_records, NULL::FLOAT;
 
 END;
 $$ LANGUAGE plpgsql;

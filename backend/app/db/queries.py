@@ -96,7 +96,7 @@ async def get_current_exposure(bench_id: int, current_time: datetime) -> Optiona
         FROM exposure e
         JOIN timestamps t ON t.id = e.ts_id
         WHERE e.bench_id = $1
-        AND t.ts = $2
+        AND t.ts = $2::timestamptz
         LIMIT 1;
     """
     
@@ -128,11 +128,11 @@ async def get_next_sun_change(bench_id: int, current_time: datetime, current_sta
     target_status = not current_status
     
     query = """
-        SELECT t.ts
+        SELECT t.ts::timestamptz
         FROM exposure e
         JOIN timestamps t ON t.id = e.ts_id
         WHERE e.bench_id = $1
-        AND t.ts > $2
+        AND t.ts > $2::timestamptz
         AND e.exposed = $3
         ORDER BY t.ts
         LIMIT 1;

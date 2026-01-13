@@ -5,10 +5,10 @@ FastAPI-based REST API service for the Sonnenbankerl application.
 ## Status: ✅ Deployed
 
 - **Environment**: Production
-- **URL**: https://sonnenbankerl.ideanexus.cloud
+- **URL**: https://sonnenbankerl.ideanexus.cloud (local: http://localhost:8000)
 - **API Docs**: https://sonnenbankerl.ideanexus.cloud/docs
 - **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
-- **Data**: Empty by default; populate via precomputation pipeline
+- **Data**: 21 benches (Stadtpark subset) from `data/osm/graz_benches.geojson`; populate exposure via precomputation pipeline
 
 ## Project Structure
 
@@ -164,14 +164,11 @@ The API uses PostgreSQL with PostGIS and TimescaleDB extensions.
 
 See `database/migrations/` for full schema.
 
-## Current Limitations
+## Current Notes
 
-This is a minimal implementation for testing. Future enhancements:
-- ❌ GeoSphere weather API integration (API key needed)
-- ❌ Real OSM bench data (load OSM benches via pipeline)
-- ❌ Actual sun position calculations (simplified algorithm)
-- ❌ Line-of-sight calculations with DSM data
-- ❌ Automated tests
+- Weather gate is temporarily skipped for local testing; re-enable when network/API access is stable.
+- Exposure depends on the imported benches and computed exposure window (7 days, 10-minute resolution).
+- Bench import currently uses a static insert list (21 benches); align SQL with the GeoJSON for future updates.
 
 ## Deployment
 
@@ -195,6 +192,16 @@ docker-compose logs -f api
 **Check health:**
 ```bash
 curl https://sonnenbankerl.ideanexus.cloud/api/health
+```
+
+## Data refresh (local/CLI)
+```bash
+cd infrastructure/docker
+psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
+psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql   # imports 21 benches
+psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
 ```
 
 ## Documentation
