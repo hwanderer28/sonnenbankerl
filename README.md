@@ -30,13 +30,13 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
 ## Project Status
 
 ### ✅ Backend - DEPLOYED & LIVE
-- **API URL**: https://sonnenbankerl.ideanexus.cloud (local: http://localhost:8000)
+- **API URL**: https://sonnenbankerl-api.ideanexus.cloud (local: http://localhost:8000)
 - **Status**: Production, fully operational
 - **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
 - **Data**: 21 benches (Stadtpark subset) from `data/osm/graz_benches.geojson`
 - **Pipeline**: Weekly exposure precomputation in DB (timestamps + sun_positions + exposure)
 - **Endpoints**: Health check, benches search, bench details
-- **Documentation**: https://sonnenbankerl.ideanexus.cloud/docs
+- **Documentation**: https://sonnenbankerl-api.ideanexus.cloud/docs
 
 ### 🚧 In Progress
 - Mobile app development (Flutter)
@@ -65,8 +65,8 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
   ```
 
 ### Backend API (Live)
-- **URL**: https://sonnenbankerl.ideanexus.cloud
-- **Docs**: https://sonnenbankerl.ideanexus.cloud/docs
+- **URL**: https://sonnenbankerl-api.ideanexus.cloud
+- **Docs**: https://sonnenbankerl-api.ideanexus.cloud/docs
 - REST API for bench locations and sun exposure data
 
 ## Technical Stack
@@ -131,17 +131,17 @@ The backend API is **deployed and ready to use**:
 **Quick Test:**
 ```bash
 # Health check
-curl https://sonnenbankerl.ideanexus.cloud/api/health
+curl https://sonnenbankerl-api.ideanexus.cloud/health
 
 # Get benches near Graz Stadtpark (47.07°N, 15.44°E)
-curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
+curl "https://sonnenbankerl-api.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
 
 # Get details for bench 1
-curl https://sonnenbankerl.ideanexus.cloud/api/benches/1
+curl https://sonnenbankerl-api.ideanexus.cloud/api/benches/1
 ```
 
 **Interactive API Documentation:**
-- Swagger UI: https://sonnenbankerl.ideanexus.cloud/docs
+- Swagger UI: https://sonnenbankerl-api.ideanexus.cloud/docs
 - Try all endpoints with live data
 - See request/response schemas
 

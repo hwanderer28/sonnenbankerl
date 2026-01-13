@@ -26,20 +26,26 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
 # Verify installation by checking for key functions
 echo "Verifying installation..."
 FUNCTION_COUNT=$(psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-    -tAc "SELECT COUNT(*) FROM pg_proc WHERE proname LIKE 'get_%position';" || echo "0")
+    -tAc "SELECT COUNT(*) FROM pg_proc WHERE proname = 'get_sun_position';" || echo "0")
 
 if [ "$FUNCTION_COUNT" -gt "0" ]; then
     echo "✅ SUCCESS: suncalc_postgres functions installed successfully!"
-    echo "   Found $FUNCTION_COUNT sun position functions"
-    
-    # Test the main function
+    echo "   Found get_sun_position function"
+
+    # Test the main function with proper record handling
     echo "Testing sun position calculation..."
-    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-        -c "SELECT 'Test: ' || 'Azimuth=' || degrees(azimuth)::TEXT || '°, Altitude=' || degrees(altitude)::TEXT || '°' 
-            FROM get_position(TIMESTAMP '2026-06-21 12:00:00', 47.07, 15.44);" \
-        || echo "Warning: Function test failed"
+    TEST_RESULT=$(psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+        -tAc "SELECT degrees((sp).azimuth) as az, degrees((sp).altitude) as alt
+              FROM get_sun_position(TIMESTAMP '2026-06-21 12:00:00+00', 47.07, 15.44) AS sp;" 2>&1) || true
+
+    if echo "$TEST_RESULT" | grep -q "^[0-9]"; then
+        echo "   Test result: Azimuth=$(echo "$TEST_RESULT" | cut -d'|' -f1)°, Altitude=$(echo "$TEST_RESULT" | cut -d'|' -f2)°"
+        echo "   Function working correctly!"
+    else
+        echo "⚠️  WARNING: Function test returned unexpected result: $TEST_RESULT"
+    fi
 else
-    echo "⚠️  WARNING: suncalc_postgres functions may not have been installed correctly"
+    echo "⚠️  WARNING: suncalc_postgres get_sun_position function not found"
     exit 1
 fi
 

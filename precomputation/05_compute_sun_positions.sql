@@ -28,15 +28,6 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_sun_position') THEN
         RAISE NOTICE 'suncalc_postgres functions are available';
         RAISE NOTICE 'Using accurate astronomical calculations for Graz (47.07°N, 15.44°E)';
-    ELSIF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_position') THEN
-        -- Create a compatibility wrapper so downstream code can call get_sun_position
-        CREATE OR REPLACE FUNCTION get_sun_position(ts TIMESTAMPTZ, lat DOUBLE PRECISION, lon DOUBLE PRECISION)
-        RETURNS RECORD
-        LANGUAGE sql STABLE AS $$
-            SELECT * FROM get_position($1, $2, $3);
-        $$;
-        RAISE NOTICE 'suncalc_postgres get_position found; wrapper get_sun_position created';
-        RAISE NOTICE 'Using accurate astronomical calculations for Graz (47.07°N, 15.44°E)';
     ELSE
         RAISE WARNING 'suncalc_postgres functions not found - will use sample sun data';
     END IF;
@@ -93,7 +84,8 @@ BEGIN
             SELECT
                 ts,
                 id,
-                ((EXTRACT(EPOCH FROM (ts AT TIME ZONE 'Europe/Vienna')) % 86400) / 86400.0) AS day_fraction
+                -- Compute day fraction from UTC midnight (timestamps are stored as TIMESTAMPTZ in UTC)
+                ((EXTRACT(EPOCH FROM ts) % 86400) / 86400.0) AS day_fraction
             FROM timestamps
             WHERE ts::DATE BETWEEN start_date AND end_date
         ) t;

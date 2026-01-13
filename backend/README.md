@@ -5,8 +5,8 @@ FastAPI-based REST API service for the Sonnenbankerl application.
 ## Status: ✅ Deployed
 
 - **Environment**: Production
-- **URL**: https://sonnenbankerl.ideanexus.cloud (local: http://localhost:8000)
-- **API Docs**: https://sonnenbankerl.ideanexus.cloud/docs
+- **URL**: https://sonnenbankerl-api.ideanexus.cloud (local: http://localhost:8000)
+- **API Docs**: https://sonnenbankerl-api.ideanexus.cloud/docs
 - **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
 - **Data**: 21 benches (Stadtpark subset) from `data/osm/graz_benches.geojson`; populate exposure via precomputation pipeline
 
@@ -80,7 +80,7 @@ Query Parameters:
 
 **Example:**
 ```bash
-curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
+curl "https://sonnenbankerl-api.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
 ```
 
 **Response:**
@@ -114,7 +114,7 @@ Path Parameters:
 
 **Example:**
 ```bash
-curl "https://sonnenbankerl.ideanexus.cloud/api/benches/1"
+curl "https://sonnenbankerl-api.ideanexus.cloud/api/benches/1"
 ```
 
 **Response:**
@@ -191,7 +191,7 @@ docker-compose logs -f api
 
 **Check health:**
 ```bash
-curl https://sonnenbankerl.ideanexus.cloud/api/health
+curl https://sonnenbankerl-api.ideanexus.cloud/health
 ```
 
 ## Data refresh (local/CLI)
