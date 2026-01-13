@@ -2,6 +2,54 @@
 
 Flutter-based mobile application for iOS and Android.
 
+## 🌐 Backend API Integration
+
+The backend API is **deployed and ready to use**:
+
+**Base URL**: `https://sonnenbankerl.ideanexus.cloud`
+
+**API Documentation**: https://sonnenbankerl.ideanexus.cloud/docs
+
+### Quick Start
+
+See the complete [API Integration Guide](../docs/API_INTEGRATION.md) for:
+- ✅ All available endpoints
+- ✅ Request/response examples  
+- ✅ Flutter service classes
+- ✅ Model definitions
+- ✅ Error handling
+- ✅ Testing guidelines
+
+### Quick Example
+
+```dart
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+// Get benches near user location
+Future<List<dynamic>> getBenches(double lat, double lon) async {
+  final url = Uri.parse(
+    'https://sonnenbankerl.ideanexus.cloud/api/benches'
+  ).replace(queryParameters: {
+    'lat': lat.toString(),
+    'lon': lon.toString(),
+    'radius': '1000',
+  });
+  
+  final response = await http.get(url);
+  
+  if (response.statusCode == 200) {
+    final data = json.decode(response.body);
+    return data['benches'];
+  }
+  throw Exception('Failed to load benches');
+}
+```
+
+### Data Availability
+
+The API serves data only after you import OSM benches and run the precomputation pipeline. Ensure rasters and OSM inputs are loaded before testing queries in the app.
+
 ## Project Structure
 
 ```

@@ -1,25 +1,27 @@
-# Local Development Environment
-# Does not include Traefik - API accessible directly on localhost:8000
-
-version: '3.8'
-
 services:
   postgres:
-    image: timescale/timescaledb-ha:pg14-latest
-    container_name: sonnenbankerl-postgres-dev
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    image: sonnenbankerl-postgres:latest
+    container_name: sonnenbankerl-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-sonnenbankerl}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../database/migrations:/docker-entrypoint-initdb.d:ro
+      - ../../data/raw:/data/raw:ro  # Mount raster data (DSM/DEM files)
+      - ../../precomputation:/precomputation:ro  # Mount SQL scripts
+      # Note: data/osm is NOT mounted - bench data is imported via SQL, not file access
     ports:
-      - "127.0.0.1:5432:5432"
+      - "5435:5432"  # Expose on 5435 to avoid conflicts
     networks:
       - internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sonnenbankerl}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,28 +30,56 @@ services:
     build:
       context: ../../backend
       dockerfile: Dockerfile
-    container_name: sonnenbankerl-api-dev
+    container_name: sonnenbankerl-api
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-sonnenbankerl}
-      GEOSPHERE_API_KEY: ${GEOSPHERE_API_KEY:-your_key_here}
-      ENVIRONMENT: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sonnenbankerl}
+      ENVIRONMENT: production
       API_PORT: 8000
-    ports:
-      - "127.0.0.1:8000:8000"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://sonnenbankerl.ideanexus.cloud}
     networks:
       - internal
+      - traefik_proxy
+      - default
     restart: unless-stopped
+    ports:
+      - "8000:8000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.sonnenbankerl-api.rule=Host(`sonnenbankerl-api.ideanexus.cloud`)"
+      - "traefik.http.routers.sonnenbankerl-api.entrypoints=websecure"
+      - "traefik.http.routers.sonnenbankerl-api.tls=true"
+      - "traefik.http.routers.sonnenbankerl-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.sonnenbankerl-api.loadbalancer.server.port=8000"
+
+  frontend:
+    image: nginx:alpine
+    container_name: sonnenbankerl-frontend
+    depends_on:
+      - api
     volumes:
-      - ../../backend/app:/app/app  # Hot reload for development
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ../../frontend:/usr/share/nginx/html:ro
+    networks:
+      - traefik_proxy
+      - default
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.sonnenbankerl-frontend.rule=Host(`sonnenbankerl.ideanexus.cloud`)"
+      - "traefik.http.routers.sonnenbankerl-frontend.entrypoints=websecure"
+      - "traefik.http.routers.sonnenbankerl-frontend.tls=true"
+      - "traefik.http.routers.sonnenbankerl-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.sonnenbankerl-frontend.loadbalancer.server.port=80"
 
 networks:
   internal:
-    driver: bridge
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
 
 volumes:
-  pgdata:
-    driver: local
+  postgres_data:

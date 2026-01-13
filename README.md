@@ -27,26 +27,47 @@ Sonnenbankerl exists for a fundamentally different moment: you want to leave you
 
 The app displays benches with clear visual indicators: yellowish for sunny benches and dark-blueish for shady ones. Tapping a sunny bench shows remaining sun exposure time, while tapping a shady bench predicts the next sunny period, accounting for sun position, terrain obstacles, and weather forecasts.
 
+## Project Status
+
+### ✅ Backend - DEPLOYED & LIVE
+- **API URL**: https://sonnenbankerl.ideanexus.cloud (local: http://localhost:8000)
+- **Status**: Production, fully operational
+- **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
+- **Data**: 21 benches (Stadtpark subset) from `data/osm/graz_benches.geojson`
+- **Pipeline**: Weekly exposure precomputation in DB (timestamps + sun_positions + exposure)
+- **Endpoints**: Health check, benches search, bench details
+- **Documentation**: https://sonnenbankerl.ideanexus.cloud/docs
+
+### 🚧 In Progress
+- Mobile app development (Flutter)
+- Weather gate: currently skipped for local testing; re-enable once network is stable
+
+### 📋 Planned / Next
+- Automate GeoJSON-driven bench import (replace hardcoded INSERTs)
+- Refine LOS tuning and canopy handling
+- Re-enable live weather gate by default
+
 ## Features
 
-### Interactive Map
+### Interactive Map (Planned)
 - Subtle OpenStreetMap humanitarian layer background
 - Real-time user location tracking
 - Visual bench indicators (yellow for sunny, dark blue for shady)
 
-### Smart Bench Analysis
+### Smart Bench Analysis (Minimal Implementation)
 - **Sunny benches**: Display remaining sun exposure time
   ```
   until 16:53 | 3 hours 14 min
   ```
-- **Shady benches**: Predict next sunny period based on sun position, terrain obstacles, and weather forecasts
+- **Shady benches**: Predict next sunny period
   ```
   next estimated sunlight: 14.12.2025 10:12 | in 2 days 3 hours 14 min
   ```
 
-### Real-time Data
-- Server-side pre-calculated sun exposure profiles
-- Live weather integration for accurate predictions
+### Backend API (Live)
+- **URL**: https://sonnenbankerl.ideanexus.cloud
+- **Docs**: https://sonnenbankerl.ideanexus.cloud/docs
+- REST API for bench locations and sun exposure data
 
 ## Technical Stack
 
@@ -75,27 +96,96 @@ PostgreSQL + PostGIS + TimescaleDB
 ```
 
 #### Precomputation Pipeline
+
+The system uses a **weekly rolling computation** approach:
+
 - **Dataset**: Binary sun exposure (sunny/shady) at 10-minute intervals
-- **Coverage**: ~200-1000 benches, annual pre-calculation
+- **Coverage**: Current week only (rolling 7-day window)
 - **Algorithm**: Sun position calculations (suncalc_postgres) + line-of-sight checks against 1m DSM
 - **Bench Height**: DEM + 1.2m (upper body/head level)
-- **Storage**: Compressed time-series profiles in TimescaleDB hypertables
-- **Processing**: Python parallelization for batch computation
-- **Updates**: Incremental recomputation every 6 months; automatic cleanup of data >1 year old
+- **Storage**: TimescaleDB hypertables for time-series efficiency
+- **Processing**: Adaptive parallelization based on available hardware
+- **Updates**: Manual on-demand (run `./compute_next_week.sh` or execute SQL scripts)
 
-📄 [Detailed pipeline documentation](docs/sunshine_calculation_pipeline.md)
+**Key Features:**
+- ✅ Pure PostgreSQL (no external Python scripts)
+- ✅ Adaptive performance (auto-detects CPU cores and memory)
+- ✅ 15-30 minute computation (vs hours/days for full year)
+- ✅ Optimized line-of-sight with pre-computed trigonometric values
+
+📄 [Precomputation Pipeline](../docs/sunshine_calculation_pipeline.md)
 
 #### Real-time Integration
 - Pre-computed sun/terrain data combined with live weather API
 - Fast query performance via pre-calculated profiles
 - Instant predictions without on-the-fly calculations
 
+## Quick Start
+
+### 🚀 Using the API (For Frontend Developers)
+
+The backend API is **deployed and ready to use**:
+
+**Base URL**: `https://sonnenbankerl.ideanexus.cloud`
+
+**Quick Test:**
+```bash
+# Health check
+curl https://sonnenbankerl.ideanexus.cloud/api/health
+
+# Get benches near Graz Stadtpark (47.07°N, 15.44°E)
+curl "https://sonnenbankerl.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
+
+# Get details for bench 1
+curl https://sonnenbankerl.ideanexus.cloud/api/benches/1
+```
+
+**Interactive API Documentation:**
+- Swagger UI: https://sonnenbankerl.ideanexus.cloud/docs
+- Try all endpoints with live data
+- See request/response schemas
+
+**Available Data:**
+- 21 benches from `data/osm/graz_benches.geojson` (Stadtpark subset) after import
+- Run the precomputation pipeline after importing benches and rasters to populate exposure
+
+**Data refresh (local/CLI):**
+```
+cd infrastructure/docker
+# clean
+psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
+# import benches (21) via precomputation/03_import_benches.sql or manual INSERT
+psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+# timestamps + sun positions
+psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+# exposure
+psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+```
+
+**For Flutter Integration:**
+See [Mobile App Integration Guide](mobile/README.md) for complete examples.
+
+### 🌐 Frontend test page
+- Path: `frontend/index.html` (Leaflet + MapTiler toner)
+- Markers: yellow=sunny, blue=shady, popups show `sun_until` / `remaining_minutes`
+- Serve locally to avoid CORS: `cd frontend && python -m http.server 3000` then open http://localhost:3000
+
+### 🔧 Backend Development
+
+For backend developers:
+- [Backend Setup](backend/README.md) - API structure and development
+- [Database Setup](database/README.md) - Schema and migrations
+- [Deployment Guide](docs/DEPLOYMENT.md) - VPS deployment steps
+
 ## Documentation
 
-- [Repository Structure](docs/repository_structure.md) - Monorepo organization and development workflow
-- [Backend Architecture](docs/architecture.md) - Infrastructure and deployment design
-- [Sunshine Calculation Pipeline](docs/sunshine_calculation_pipeline.md) - Detailed precomputation workflow
-- [Resources & References](docs/resources.md) - Tools, data sources, APIs, and documentation
+- [Deployment Guide](docs/DEPLOYMENT.md) - **START HERE** for deployment
+- [Precomputation Pipeline](docs/sunshine_calculation_pipeline.md) - Weekly computation workflow
+- [Backend API](backend/README.md) - API endpoints and usage
+- [Database Schema](database/README.md) - Database structure and migrations
+- [Backend Architecture](docs/architecture.md) - Infrastructure and design
+- [Resources & References](docs/resources.md) - Tools, data sources, APIs
 
 ## License
 
