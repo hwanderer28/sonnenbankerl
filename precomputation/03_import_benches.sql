@@ -32,32 +32,44 @@ CREATE INDEX IF NOT EXISTS idx_benches_osm_id ON benches (osm_id);
 -- -----------------------------------------------------------------------------
 
 -- Import bench data from OpenStreetMap (data/osm/graz_benches.geojson)
--- Generated from data/osm/graz_benches.geojson
--- Total benches: 21 (Stadtpark subset)
--- ON CONFLICT DO NOTHING ensures idempotent imports (can re-run safely)
-INSERT INTO benches (osm_id, geom, name) VALUES
-(4293469851, ST_SetSRID(ST_MakePoint(15.4434621, 47.0752667), 4326), 'Bench 4293469851'),
-(4293469852, ST_SetSRID(ST_MakePoint(15.4445927, 47.0752726), 4326), 'Bench 4293469852'),
-(4293469863, ST_SetSRID(ST_MakePoint(15.4435694, 47.0753777), 4326), 'Bench 4293469863'),
-(4293469673, ST_SetSRID(ST_MakePoint(15.4442162, 47.0749317), 4326), 'Bench 4293469673'),
-(4293469862, ST_SetSRID(ST_MakePoint(15.443489, 47.0753631), 4326), 'Bench 4293469862'),
-(4293469681, ST_SetSRID(ST_MakePoint(15.4437267, 47.0750011), 4326), 'Bench 4293469681'),
-(4293469865, ST_SetSRID(ST_MakePoint(15.443493, 47.075395), 4326), 'Bench 4293469865'),
-(4293469864, ST_SetSRID(ST_MakePoint(15.4437391, 47.0753916), 4326), 'Bench 4293469864'),
-(4293469686, ST_SetSRID(ST_MakePoint(15.4442765, 47.0750267), 4326), 'Bench 4293469686'),
-(4293469794, ST_SetSRID(ST_MakePoint(15.4442061, 47.0750459), 4326), 'Bench 4293469794'),
-(4293469831, ST_SetSRID(ST_MakePoint(15.4435289, 47.0751623), 4326), 'Bench 4293469831'),
-(4293469835, ST_SetSRID(ST_MakePoint(15.4436107, 47.0751779), 4326), 'Bench 4293469835'),
-(4293469834, ST_SetSRID(ST_MakePoint(15.4434464, 47.075176), 4326), 'Bench 4293469834'),
-(2284918620, ST_SetSRID(ST_MakePoint(15.4445856, 47.0750491), 4326), 'Bench 2284918620'),
-(4293469800, ST_SetSRID(ST_MakePoint(15.4441565, 47.0750578), 4326), 'Bench 4293469800'),
-(2284918617, ST_SetSRID(ST_MakePoint(15.4443727, 47.0750427), 4326), 'Bench 2284918617'),
-(4293469796, ST_SetSRID(ST_MakePoint(15.4436214, 47.0750518), 4326), 'Bench 4293469796'),
-(2284918625, ST_SetSRID(ST_MakePoint(15.4445411, 47.075056), 4326), 'Bench 2284918625'),
-(4293469805, ST_SetSRID(ST_MakePoint(15.4441022, 47.0750719), 4326), 'Bench 4293469805'),
-(2284918626, ST_SetSRID(ST_MakePoint(15.444462, 47.0750572), 4326), 'Bench 2284918626'),
-(4293469813, ST_SetSRID(ST_MakePoint(15.4436006, 47.0750948), 4326), 'Bench 4293469813')
-ON CONFLICT (osm_id) DO NOTHING;
+-- Source CRS: EPSG:3857 (see GeoJSON crs)
+-- GeoJSON is mounted into the Postgres container at /data/osm
+DO $$
+DECLARE
+    source_path TEXT := '/data/osm/graz_benches.geojson';
+    feature JSONB;
+    imported INTEGER := 0;
+    geom_3857 GEOMETRY;
+    bench_name TEXT;
+    bench_osm_id BIGINT;
+BEGIN
+    -- Clear existing benches (safe to re-run)
+    DELETE FROM benches;
+
+    -- Loop over features in the GeoJSON file
+    FOR feature IN
+        SELECT jsonb_array_elements(pg_read_file(source_path)::jsonb -> 'features')
+    LOOP
+        bench_osm_id := (feature -> 'properties' ->> 'osm_id')::BIGINT;
+        bench_name   := COALESCE(feature -> 'properties' ->> 'name', format('Bench %s', bench_osm_id));
+        geom_3857    := ST_SetSRID(ST_GeomFromGeoJSON(feature ->> 'geometry'), 3857);
+
+        INSERT INTO benches (osm_id, geom, name)
+        VALUES (
+            bench_osm_id,
+            ST_Transform(geom_3857, 4326)::geography,
+            bench_name
+        )
+        ON CONFLICT (osm_id) DO UPDATE
+        SET geom = EXCLUDED.geom,
+            name = EXCLUDED.name;
+
+        imported := imported + 1;
+    END LOOP;
+
+    RAISE NOTICE 'Imported % benches from %', imported, source_path;
+END $$;
+
 
 -- Function to update all bench elevations from DEM raster
 -- Handles coordinate transformation (EPSG:4326 → EPSG:3857) automatically
