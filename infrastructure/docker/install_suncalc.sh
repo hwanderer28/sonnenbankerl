@@ -23,16 +23,13 @@ fi
 
 echo "📦 Installing suncalc_postgres functions..."
 
-# Create temporary directory
-cd /tmp
-if [ -d "suncalc_postgres" ]; then
-    rm -rf suncalc_postgres
-fi
+# Create isolated temporary directory
+TMP_CLONE=$(mktemp -d /tmp/suncalc_postgres.XXXXXX)
+cd "$TMP_CLONE"
 
 # Clone the repository
 echo "📥 Cloning suncalc_postgres repository..."
-git clone https://github.com/olithissen/suncalc_postgres.git
-cd suncalc_postgres
+git clone https://github.com/olithissen/suncalc_postgres.git .
 
 # Load the SQL functions directly (no compilation needed)
 echo "📋 Loading SQL functions into PostgreSQL..."
@@ -41,7 +38,7 @@ psql -U postgres -d sonnenbankerl -f suncalc/suncalc.sql
 # Clean up
 echo "🧹 Cleaning up..."
 cd /tmp
-rm -rf suncalc_postgres
+rm -rf "$TMP_CLONE"
 
 # Check if files were installed
 echo "🔍 Checking installation..."

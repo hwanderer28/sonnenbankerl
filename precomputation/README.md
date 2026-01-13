@@ -83,7 +83,7 @@ precomputation/
 
 ## Prerequisites
 
-- PostgreSQL 14+ with PostGIS, TimescaleDB, and suncalc_postgres extension
+- PostgreSQL 14+ with PostGIS, TimescaleDB, and suncalc_postgres extension (if missing, run inside the container: `/usr/local/bin/install_suncalc.sh`)
 - DSM/DEM raster files (GeoTIFF format) in `data/raw/` directory
 - OSM bench data in `data/osm/` directory (for reference)
 - Recommended: 4GB+ database memory for optimal performance
@@ -133,7 +133,7 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputatio
 ```
 
 ### Horizon + LOS approach (current implementation)
-- DEM-based horizon profiles precomputed per bench in 2° bins out to 8 km (`bench_horizon`).
+- DEM-based horizon profiles precomputed per bench in 2° bins out to 8 km (`bench_horizon`), using a downsampled 10 m DEM (`dem_raster_10m`) created by `import_data.sh` (the 1 m DEM stays for elevations).
 - Exposure uses a horizon gate (solar elevation must exceed horizon angle) and a near-field LOS (≤500 m, ~5 m steps) on the DSM. When rays leave raster coverage, they are treated as clear (not auto-blocking).
 - Ensure rasters cover the benches area (DSM/DEM in EPSG:3857). Use tiling on import to avoid memory issues.
 
