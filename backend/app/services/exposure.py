@@ -56,6 +56,10 @@ async def get_bench_sun_status(
         next_change = await get_next_sun_change(bench_id, rounded_time, exposed)
 
         if next_change:
+            # Ensure next_change is timezone-aware to avoid naive/aware subtraction errors
+            if next_change.tzinfo is None:
+                next_change = next_change.replace(tzinfo=timezone.utc)
+
             time_diff = next_change - now
             remaining_minutes = int(time_diff.total_seconds() / 60)
             return status, next_change, remaining_minutes
