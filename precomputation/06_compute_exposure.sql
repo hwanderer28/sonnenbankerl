@@ -56,6 +56,144 @@ $$ LANGUAGE plpgsql;
 -- Apply performance settings
 SELECT configure_performance_settings() as performance_config;
 
+-- Horizon data storage (2° bins, up to 8 km)
+CREATE TABLE IF NOT EXISTS bench_horizon (
+    bench_id INTEGER NOT NULL,
+    azimuth_deg INTEGER NOT NULL,
+    max_angle_deg DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (bench_id, azimuth_deg)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bench_horizon_bench_azimuth ON bench_horizon (bench_id, azimuth_deg);
+
+-- Compute per-bench horizon angles using DEM
+CREATE OR REPLACE FUNCTION compute_bench_horizon(
+    p_bench_id INTEGER,
+    p_max_distance FLOAT DEFAULT 8000,  -- meters
+    p_step FLOAT DEFAULT 20,            -- meters
+    p_azimuth_step INTEGER DEFAULT 2    -- degrees
+) RETURNS INTEGER AS $$
+DECLARE
+    bench_geom geography;
+    bench_point geometry;
+    bench_elev FLOAT;
+    obs_height FLOAT := 1.2; -- observer height above ground
+    dem_rast raster;
+    raster_env geometry;
+    az INTEGER;
+    dist FLOAT;
+    sample_point geometry;
+    sample_z FLOAT;
+    max_angle FLOAT;
+    angle_deg FLOAT;
+BEGIN
+    SELECT geom, elevation INTO bench_geom, bench_elev FROM benches WHERE id = p_bench_id;
+    IF bench_geom IS NULL THEN
+        RAISE EXCEPTION 'Bench % not found', p_bench_id;
+    END IF;
+
+    bench_point := ST_Transform(bench_geom::geometry, 3857);
+
+    -- Build a DEM raster covering the 8 km buffer around the bench
+    SELECT ST_Union(rast) INTO dem_rast
+    FROM dem_raster
+    WHERE ST_Intersects(rast, ST_Buffer(bench_point, p_max_distance));
+
+    IF dem_rast IS NULL THEN
+        RAISE EXCEPTION 'DEM raster not found near bench %', p_bench_id;
+    END IF;
+
+    raster_env := ST_Envelope((dem_rast)::geometry);
+
+    -- Fallback bench elevation from DEM if missing
+    IF bench_elev IS NULL THEN
+        SELECT ST_Value(dem_rast, bench_point) INTO bench_elev;
+    END IF;
+    bench_elev := COALESCE(bench_elev, 0);
+
+    -- Clear existing horizon rows for this bench
+    DELETE FROM bench_horizon WHERE bench_id = p_bench_id;
+
+    FOR az IN 0..359 BY p_azimuth_step LOOP
+        max_angle := -90;
+        FOR dist IN p_step..p_max_distance BY p_step LOOP
+            sample_point := ST_SetSRID(
+                ST_MakePoint(
+                    ST_X(bench_point) + dist * cos(radians(az)),
+                    ST_Y(bench_point) + dist * sin(radians(az))
+                ),
+                3857
+            );
+
+            -- Stop if we leave raster coverage
+            IF NOT ST_Contains(raster_env, sample_point) THEN
+                EXIT;
+            END IF;
+
+            SELECT ST_Value(dem_rast, sample_point) INTO sample_z;
+            IF sample_z IS NULL THEN
+                CONTINUE;
+            END IF;
+
+            angle_deg := degrees(atan((sample_z - (bench_elev + obs_height)) / dist));
+            IF angle_deg > max_angle THEN
+                max_angle := angle_deg;
+            END IF;
+        END LOOP;
+
+        INSERT INTO bench_horizon (bench_id, azimuth_deg, max_angle_deg)
+        VALUES (p_bench_id, az, max_angle)
+        ON CONFLICT (bench_id, azimuth_deg) DO UPDATE
+        SET max_angle_deg = EXCLUDED.max_angle_deg;
+    END LOOP;
+
+    RETURN 1;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Compute horizons for all benches
+CREATE OR REPLACE FUNCTION compute_all_bench_horizons(
+    p_max_distance FLOAT DEFAULT 8000,
+    p_step FLOAT DEFAULT 20,
+    p_azimuth_step INTEGER DEFAULT 2
+) RETURNS INTEGER AS $$
+DECLARE
+    b_id INTEGER;
+    processed INTEGER := 0;
+BEGIN
+    FOR b_id IN SELECT id FROM benches LOOP
+        PERFORM compute_bench_horizon(b_id, p_max_distance, p_step, p_azimuth_step);
+        processed := processed + 1;
+    END LOOP;
+    RETURN processed;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Lookup horizon angle for a bench/azimuth (2° bins)
+CREATE OR REPLACE FUNCTION get_horizon_angle(
+    p_bench_id INTEGER,
+    p_azimuth FLOAT,
+    p_bin_size INTEGER DEFAULT 2
+) RETURNS DOUBLE PRECISION AS $$
+DECLARE
+    v_bin INTEGER;
+    v_angle DOUBLE PRECISION;
+BEGIN
+    IF p_bench_id IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    v_bin := floor(p_azimuth / p_bin_size)::INT * p_bin_size;
+    v_bin := ( (v_bin % 360) + 360 ) % 360;
+
+    SELECT max_angle_deg INTO v_angle
+    FROM bench_horizon
+    WHERE bench_id = p_bench_id AND azimuth_deg = v_bin;
+
+    RETURN v_angle;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
 -- Function to get DSM elevation efficiently (caches raster reference)
 CREATE OR REPLACE FUNCTION get_dsm_elevation(
     p_bench_point GEOMETRY,
@@ -95,10 +233,11 @@ CREATE OR REPLACE FUNCTION safe_is_exposed(
     azimuth FLOAT,
     elevation FLOAT,
     observer_height FLOAT,
+    bench_id INTEGER DEFAULT NULL,
     dsm RASTER DEFAULT NULL
 ) RETURNS BOOLEAN AS $$
 BEGIN
-    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, observer_height, dsm);
+    RETURN is_exposed_optimized(bench_geom, azimuth, elevation, observer_height, bench_id, dsm);
 EXCEPTION WHEN OTHERS THEN
     -- On any error, assume not exposed (safe default)
     RETURN FALSE;
@@ -111,13 +250,14 @@ CREATE OR REPLACE FUNCTION is_exposed_optimized(
     azimuth FLOAT,
     elevation FLOAT,
     observer_height FLOAT,
+    bench_id INTEGER DEFAULT NULL,
     dsm RASTER DEFAULT NULL
 ) RETURNS BOOLEAN AS $$
 DECLARE
     bench_point GEOMETRY;
     target_srid INTEGER := 3857;
-    distance FLOAT := 200;   -- Defaults for projected (meters)
-    step_size FLOAT := 5;    -- Defaults for projected (meters)
+    distance FLOAT := 500;   -- Near-field LOS (meters)
+    step_size FLOAT := 5;    -- Fine steps for vegetation (meters)
     i INTEGER;
     obs_z FLOAT;
     max_z FLOAT := -9999;
@@ -128,18 +268,21 @@ DECLARE
     dsm_raster_ref RASTER;
     raster_env GEOMETRY;
     step_offset FLOAT;
+    horizon_angle FLOAT;
 BEGIN
     -- Skip nighttime
     IF elevation <= 0 THEN
         RETURN FALSE;
     END IF;
 
-    -- Get DSM raster reference with SRID-aware intersection
+    -- Get DSM raster reference with SRID-aware intersection (union tiles around bench)
     IF dsm IS NULL THEN
-        SELECT rast INTO dsm_raster_ref
+        SELECT ST_Union(rast) INTO dsm_raster_ref
         FROM dsm_raster
-        WHERE ST_Intersects(rast, ST_Transform(bench_geom::geometry, ST_SRID(rast)))
-        LIMIT 1;
+        WHERE ST_Intersects(
+            rast,
+            ST_Transform(ST_Buffer(bench_geom::geometry, distance + 10), ST_SRID(rast))
+        );
 
         IF dsm_raster_ref IS NULL THEN
             RETURN FALSE;
@@ -153,12 +296,18 @@ BEGIN
 
     -- Adjust step/distance if raster is geographic
     IF target_srid = 4326 THEN
-        distance := 0.002;    -- ~200 m
-        step_size := 0.00002; -- ~2 m
+        distance := 0.005;     -- ~500 m
+        step_size := 0.00005;  -- ~5 m
     END IF;
 
     -- Transform once to raster SRID
     bench_point := ST_Transform(bench_geom::geometry, target_srid);
+
+    -- Horizon gate using precomputed DEM horizon (2° bins)
+    horizon_angle := get_horizon_angle(bench_id, azimuth, 2);
+    IF horizon_angle IS NOT NULL AND elevation <= horizon_angle THEN
+        RETURN FALSE;
+    END IF;
 
     -- Pre-compute trigonometric values (avoid recalculating in loop)
     cos_az := cos(radians(azimuth));
@@ -168,7 +317,7 @@ BEGIN
     -- Get observer height (from DEM + 1.2m)
     obs_z := observer_height;
 
-    -- Optimized ray casting with early exit
+    -- Optimized ray casting with early exit (near-field obstacles)
     FOR i IN 1..(distance / step_size)::INT LOOP
         step_offset := i * step_size;
         sample_point := ST_SetSRID(
@@ -179,9 +328,9 @@ BEGIN
             target_srid
         );
 
-        -- If sample leaves raster footprint, assume clear LOS beyond raster
+        -- If sample leaves raster footprint, stop checking further (treat as clear beyond)
         IF NOT ST_Contains(raster_env, sample_point) THEN
-            EXIT; -- leave loop; no obstacle encountered within raster
+            EXIT;
         END IF;
 
         -- Get terrain height at sample point (treat NULL as no obstacle)
@@ -193,7 +342,7 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- Sun is visible (no obstructions within raster)
+    -- Sun is visible (no obstructions within near-field)
     RETURN obs_z + tan_el * distance > max_z;
 END;
 $$ LANGUAGE plpgsql PARALLEL SAFE;
@@ -204,10 +353,11 @@ CREATE OR REPLACE FUNCTION is_exposed(
     azimuth FLOAT,
     elevation FLOAT,
     observer_height FLOAT,
+    bench_id INTEGER DEFAULT NULL,
     dsm RASTER DEFAULT NULL
 ) RETURNS BOOLEAN AS $$
 BEGIN
-    RETURN safe_is_exposed(bench_geom, azimuth, elevation, observer_height, dsm);
+    RETURN safe_is_exposed(bench_geom, azimuth, elevation, observer_height, bench_id, dsm);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -289,7 +439,7 @@ BEGIN
         SELECT
             t.id as ts_id,
             b.id as bench_id,
-            safe_is_exposed(b.geom, sp.azimuth_deg, sp.elevation_deg, b.elevation + 1.2, NULL::public.raster) as exposed
+            safe_is_exposed(b.geom, sp.azimuth_deg, sp.elevation_deg, b.elevation + 1.2, b.id, NULL::public.raster) as exposed
         FROM benches b
         CROSS JOIN timestamps t
         JOIN sun_positions sp ON sp.ts_id = t.id

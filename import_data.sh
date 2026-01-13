@@ -77,8 +77,11 @@ import_rasters() {
   echo "Step 1: Importing rasters (DSM/DEM)..."
   echo "----------------------------------------------"
   check_raster_files
-  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
-  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
+  # Drop old rasters to avoid relation-exists errors
+  docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "DROP TABLE IF EXISTS dsm_raster CASCADE; DROP TABLE IF EXISTS dem_raster CASCADE;"
+  # Import with tiling to reduce memory footprint; adjust SRID if your GeoTIFFs are 4326
+  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M -t 200x200 /data/raw/dsm_graz_1m.tif dsm_raster | psql -U postgres -d sonnenbankerl"
+  docker-compose --env-file .env exec -T postgres bash -c "raster2pgsql -s 3857 -I -C -M -t 200x200 /data/raw/dem_graz.tif dem_raster | psql -U postgres -d sonnenbankerl"
   $PSQL_CMD -f /precomputation/02_import_rasters.sql
   echo ""
 }
@@ -86,6 +89,8 @@ import_rasters() {
 import_benches() {
   echo "Step 2: Importing benches (OSM)..."
   echo "----------------------------------------------"
+  # Clear benches (and dependent data) before import; bench_horizon is optional
+  docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE benches RESTART IDENTITY CASCADE; DO \$\$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'bench_horizon') THEN EXECUTE 'TRUNCATE bench_horizon'; END IF; END \$\$;"
   $PSQL_CMD -f /precomputation/03_import_benches.sql
   echo ""
 }

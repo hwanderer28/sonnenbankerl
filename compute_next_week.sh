@@ -27,8 +27,9 @@ echo "  1. Clean old computation data"
 echo "  2. Generate timestamps for next 7 days"
 echo "  3. Compute sun positions (azimuth, elevation)"
 echo "  4. Load exposure functions/config"
-echo "  5. Compute exposure for all 50 benches"
-echo "  6. Display results"
+echo "  5. Precompute DEM horizons (2° bins to 8 km)"
+echo "  6. Compute exposure for all benches"
+echo "  7. Display results"
 echo ""
 echo "Estimated time: 15-30 minutes"
 echo ""
@@ -37,7 +38,9 @@ read -p "Press Enter to continue or Ctrl+C to cancel..."
 echo ""
 echo "Step 1: Cleaning old computation data..."
 echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
+# Ensure bench_horizon table exists before truncating
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "CREATE TABLE IF NOT EXISTS bench_horizon (bench_id INTEGER NOT NULL, azimuth_deg INTEGER NOT NULL, max_angle_deg DOUBLE PRECISION NOT NULL, PRIMARY KEY (bench_id, azimuth_deg));"
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
 
 echo ""
 echo "Step 2: Generating weekly timestamps..."
@@ -55,14 +58,20 @@ echo "----------------------------------------------"
 docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -f /precomputation/06_compute_exposure.sql
 
 echo ""
-echo "Step 5: Computing exposure (this takes the most time)..."
+echo "Step 5: Precomputing DEM horizons (this may take a few minutes)..."
+echo "----------------------------------------------"
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+
+echo ""
+echo "Step 6: Computing exposure (this takes the most time)..."
 echo "----------------------------------------------"
 docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
 
 echo ""
-echo "Step 6: Displaying results..."
+echo "Step 7: Displaying results..."
 echo "----------------------------------------------"
 docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
+
 
 echo ""
 echo "=============================================="

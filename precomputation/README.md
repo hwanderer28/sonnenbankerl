@@ -12,6 +12,32 @@ cd infrastructure/docker
 
 Or manually:
 
+```
+cd infrastructure/docker
+
+# Clear old data
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "
+DELETE FROM exposure;
+DELETE FROM sun_positions;
+DELETE FROM timestamps;
+DELETE FROM bench_horizon;
+"
+
+# Run pipeline steps
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+
+# Precompute DEM-based horizons (2° bins to 8 km)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
+```
+
+
+Or manually:
+
 ```bash
 cd infrastructure/docker
 
@@ -96,12 +122,31 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputatio
 # Compute sun positions
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
 
-# Compute exposure (15-30 minutes)
+# Precompute DEM-based horizons (2° bins to 8 km)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+
+# Compute exposure with horizon gate + near-field LOS
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
 
-# View results
+# View weekly summary
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
 ```
+
+### Horizon + LOS approach (current implementation)
+- DEM-based horizon profiles precomputed per bench in 2° bins out to 8 km (`bench_horizon`).
+- Exposure uses a horizon gate (solar elevation must exceed horizon angle) and a near-field LOS (≤500 m, ~5 m steps) on the DSM. When rays leave raster coverage, they are treated as clear (not auto-blocking).
+- Ensure rasters cover the benches area (DSM/DEM in EPSG:3857). Use tiling on import to avoid memory issues.
+
+### Reset and rerun pipeline
+If rerunning from scratch:
+```bash
+# Clean computation tables (keeps benches)
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
+
+# Then run compute_next_week.sh (wrapper) or the manual steps above
+./compute_next_week.sh
+```
+
 
 ## Usage
 
@@ -113,6 +158,9 @@ SELECT generate_weekly_timestamps();
 
 -- Compute sun positions for the week
 SELECT compute_weekly_sun_positions();
+
+-- Precompute DEM horizons (2° bins to 8 km)
+SELECT compute_all_bench_horizons();
 
 -- Compute exposure for next 7 days (recommended)
 SELECT compute_exposure_next_days_optimized(7);
@@ -198,6 +246,9 @@ SET effective_cache_size = '4GB';
 ### Line-of-Sight Calculation
 
 The `is_exposed_optimized()` function performs:
+- Horizon gate from precomputed DEM profiles (2° bins to 8 km); if solar elevation is below the horizon angle, exposure is false.
+- Near-field LOS (≤500 m) with fine steps (~5 m) on DSM to capture local obstacles (trees/buildings).
+- Nighttime check (elevation <= 0 returns false).
 
 1. **Sun position**: Calculated using suncalc_postgres extension
 2. **Ray casting**: 200m ray from bench toward sun (5m steps)
