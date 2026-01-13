@@ -284,12 +284,13 @@ BEGIN
 
     -- Get DSM raster reference with SRID-aware intersection (union tiles around bench)
     IF dsm IS NULL THEN
-        SELECT ST_Union(rast) INTO dsm_raster_ref
+        SELECT ST_Union(rast), ST_SRID(rast) INTO dsm_raster_ref, target_srid
         FROM dsm_raster
         WHERE ST_Intersects(
             rast,
-            ST_Transform(ST_Buffer(bench_geom::geometry, distance + 10), ST_SRID(rast))
-        );
+            ST_Buffer(ST_Transform(bench_geom::geometry, ST_SRID(rast)), distance + 10)
+        )
+        LIMIT 1;
 
         IF dsm_raster_ref IS NULL THEN
             RETURN FALSE;
