@@ -11,17 +11,22 @@ echo "==========================================================================
 echo "Installing suncalc_postgres functions..."
 echo "==============================================================================="
 
-# Check if suncalc SQL file exists
-if [ ! -f "/tmp/suncalc_postgres/suncalc/suncalc.sql" ]; then
-    echo "ERROR: suncalc.sql file not found at /tmp/suncalc_postgres/suncalc/suncalc.sql"
+# Check if suncalc SQL file exists in primary location or fallback
+if [ -f "/var/lib/suncalc_postgres/suncalc/suncalc.sql" ]; then
+    PSQL_PATH="/var/lib/suncalc_postgres/suncalc/suncalc.sql"
+    echo "Using suncalc from /var/lib/suncalc_postgres"
+elif [ -f "/tmp/suncalc_postgres/suncalc/suncalc.sql" ]; then
+    PSQL_PATH="/tmp/suncalc_postgres/suncalc/suncalc.sql"
+    echo "Using suncalc from /tmp/suncalc_postgres (legacy path)"
+else
+    echo "ERROR: suncalc.sql file not found at /var/lib/suncalc_postgres/suncalc/suncalc.sql or /tmp/suncalc_postgres/suncalc/suncalc.sql"
     echo "The suncalc_postgres repository may not have been cloned during build."
     exit 1
 fi
 
 # Install suncalc functions into the database
 echo "Loading suncalc functions into database: $POSTGRES_DB"
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-    -f /tmp/suncalc_postgres/suncalc/suncalc.sql
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$PSQL_PATH"
 
 # Verify installation by checking for key functions
 echo "Verifying installation..."
