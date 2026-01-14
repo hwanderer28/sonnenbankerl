@@ -38,12 +38,18 @@ Benches (21, Stadtpark subset) → Timestamps (weekly) → Sun Positions → Exp
    - Azimuth and elevation for each timestamp
    - ~365 daylight positions per week
 
-4. **Exposure** (`06_compute_exposure.sql`)
-   - Line-of-sight analysis using DSM raster
+4. **Horizons** (`compute_all_bench_horizons()`)
+   - Precomputed horizon profiles for each bench
+   - 2° azimuth bins out to 8 km
+   - Uses downsampled 10m DEM for efficiency
+   - Enables fast LOS gate checking
+
+5. **Exposure** (`06_compute_exposure.sql`)
+   - Line-of-sight analysis using horizon gate + near-field DSM checks
    - 21 benches × ~1000 timestamps (day/night) ≈ 21k records/week
    - TRUE (sunny) or FALSE (shady)
 
-5. **Results** (`07_compute_next_week.sql`)
+6. **Results** (`07_compute_next_week.sql`)
    - Statistics and visualization
    - Daily and bench-level breakdowns
 
@@ -62,7 +68,7 @@ Benches (21, Stadtpark subset) → Timestamps (weekly) → Sun Positions → Exp
 cd infrastructure/docker
 
 # Step 1: Clear old data and import benches (21 benches from geojson)
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
 
 # Step 2: Generate weekly timestamps
@@ -71,10 +77,13 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputatio
 # Step 3: Compute sun positions
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
 
-# Step 4: Compute exposure (15-30 minutes)
+# Step 4: Precompute horizons (2° bins to 8 km) - Required for efficient LOS
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+
+# Step 5: Compute exposure using horizon gate + near-field LOS (15-30 minutes)
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
 
-# Step 5: View results
+# Step 6: View results
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
 ```
 
@@ -160,7 +169,7 @@ SET random_page_cost = 1.1;  -- For SSD storage
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `distance` | 200m | Max ray length for line-of-sight |
+| `distance` | 500m | Max ray length for near-field line-of-sight |
 | `step_size` | 5m | Sampling interval along ray |
 | `sitting_height` | 1.2m | Bench height above ground |
 | `graz_latitude` | 47.07°N | Graz city center latitude |

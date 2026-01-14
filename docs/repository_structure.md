@@ -23,14 +23,16 @@ sonnenbankerl/
 
 ### Mobile App (`mobile/`)
 
-**Purpose:** Flutter-based iOS/Android application
+**Purpose:** Flutter-based iOS/Android application (PLANNED, NOT YET STARTED)
+
+**Current Status:** Placeholder directory - mobile app development has not begun.
 
 **Key directories:**
-- `lib/models/` - Data models (Bench, Exposure)
-- `lib/services/` - API clients, location services
-- `lib/screens/` - UI screens (Map, BenchDetail)
-- `lib/widgets/` - Reusable UI components
-- `test/` - Unit and widget tests
+- `lib/models/` - Data models (Bench, Exposure) - **TODO**
+- `lib/services/` - API clients, location services - **TODO**
+- `lib/screens/` - UI screens (Map, BenchDetail) - **TODO**
+- `lib/widgets/` - Reusable UI components - **TODO**
+- `test/` - Unit and widget tests - **TODO**
 
 **Tech stack:** Flutter, Dart
 
@@ -71,15 +73,16 @@ sonnenbankerl/
 
 ### Precomputation (`precomputation/`)
 
-**Purpose:** Batch processing for sun exposure calculations
+**Purpose:** Batch processing for sun exposure calculations using a database-first approach (pure SQL)
 
 **Key files:**
-- `compute_exposure.py` - Main precomputation script
-- `los_algorithm.py` - Line-of-sight calculations
-- `import_osm.py` - OSM data import
-- `import_dsm.py` - DSM/DEM raster import
+- `03_import_benches.sql` - Import benches from OSM GeoJSON, update elevations from DEM
+- `04_generate_timestamps.sql` - Generate rolling 7-day timestamps
+- `05_compute_sun_positions.sql` - Compute sun azimuth/elevation for each timestamp
+- `06_compute_exposure.sql` - Line-of-sight computation with horizon precomputation
+- `compute_next_week.sh` - Shell script orchestrating the full pipeline
 
-**Tech stack:** Python, PostGIS, GDAL
+**Tech stack:** Pure SQL (PL/pgSQL), PostGIS, GDAL
 
 **Documentation:** [precomputation/README.md](../precomputation/README.md)
 

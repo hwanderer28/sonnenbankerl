@@ -112,12 +112,18 @@ CREATE TABLE exposure (
     ts_id INT REFERENCES timestamps(id),
     bench_id INT REFERENCES benches(id),
     exposed BOOLEAN NOT NULL,
-    location GEOGRAPHY(POINT, 4326),
     PRIMARY KEY (ts_id, bench_id)
 );
 SELECT create_hypertable('exposure', 'ts_id', chunk_time_interval => INTERVAL '1 month');
 CREATE INDEX exposure_bench_ts_idx ON exposure (bench_id, ts_id DESC);
-CREATE INDEX exposure_location_idx ON exposure USING GIST (location);
+
+-- Precomputed horizon profiles for efficient LOS checks
+CREATE TABLE bench_horizon (
+    bench_id INT REFERENCES benches(id) ON DELETE CASCADE,
+    azimuth_bin INT CHECK (azimuth_bin >= 0 AND azimuth_bin < 180),
+    horizon_angle_deg FLOAT,
+    PRIMARY KEY (bench_id, azimuth_bin)
+);
 
 -- Digital Surface Model and Digital Elevation Model
 -- (Loaded via raster2pgsql)
@@ -249,26 +255,43 @@ GET  /api/health
 
 **Weather Integration:**
 
-```python
-# Cache weather data to reduce API calls
-import aiohttp
-from datetime import datetime, timedelta
+The system integrates with GeoSphere Austria to determine current sunshine conditions. This acts as a "weather gate" - if no sunshine is reported, all benches are marked as shady regardless of geometric exposure.
 
-WEATHER_CACHE_TTL = 600  # 10 minutes
+**Endpoint:** `GET /api/weather/current`
 
-async def fetch_weather():
-    """Fetch current weather from GeoSphere Austria API"""
-    # API: https://dataset.api.hub.geosphere.at/
-    # Endpoint: Current observations for Graz
-    async with aiohttp.ClientSession() as session:
-        async with session.get(GEOSPHERE_API_URL) as resp:
-            data = await resp.json()
-            return {
-                'cloud_cover': data['cloud_cover_percent'],
-                'conditions': data['weather_condition'],
-                'timestamp': datetime.now()
-            }
+**Response:**
+```json
+{
+  "is_sunny": true,
+  "sunshine_seconds": 480,
+  "station": "Graz Universitaet",
+  "cached": false,
+  "timestamp": "2025-12-11T14:30:00Z"
+}
 ```
+
+**Caching Strategy:**
+- 10-minute cache TTL to reduce API calls
+- Stale cache fallback on API errors (continues serving last known value)
+- Can force refresh with `?refresh=true` query parameter
+
+**Station Configuration:**
+| Station ID | Name |
+|------------|------|
+| 11290 | Graz Universitaet (default) |
+| 11240 | Graz-Thalerhof-Flughafen |
+| 11238 | Graz/Strassgang |
+| 11291 | Graz Universitaet/Heinrichstrasse |
+
+**Configuration:**
+```python
+# From backend/app/config.py
+GEOSPHERE_API_URL = "https://dataset.api.hub.geosphere.at"
+GEOSPHERE_STATION_ID = "11290"  # Default station
+WEATHER_CACHE_TTL = 600  # 10 minutes in seconds
+```
+
+**Note:** The weather gate is **skipped by default** (`skip_weather_check=True`) for local development and testing. In production, configure `skip_weather_check=False` to enable the weather-based sunshine gate.
 
 ### 3. Reverse Proxy / Load Balancer
 
@@ -318,81 +341,32 @@ networks:
 
 ### 4. Precomputation Service
 
-**Python Script Structure:**
+The system uses a **database-first approach** with pure SQL functions for sun exposure computation. All processing happens inside PostgreSQL using PL/pgSQL functions.
 
-```python
-# precompute_exposure.py
-import psycopg2
-from multiprocessing import Pool, cpu_count
-from datetime import datetime, timedelta
-import argparse
+**Key Functions:**
 
-def compute_bench_exposure(bench_id, year):
-    """
-    Compute sun exposure for a single bench across all timestamps
-    Uses line-of-sight algorithm with DSM data
-    """
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    
-    # Get bench data
-    cur.execute("SELECT id, geom, elevation FROM benches WHERE id = %s", (bench_id,))
-    bench = cur.fetchone()
-    
-    # Get all timestamps for the year
-    cur.execute("""
-        SELECT ts.id, sp.azimuth_deg, sp.elevation_deg
-        FROM timestamps ts
-        JOIN sun_positions sp ON sp.ts_id = ts.id
-        WHERE EXTRACT(YEAR FROM ts.ts) = %s
-    """, (year,))
-    
-    timestamps = cur.fetchall()
-    
-    for ts_id, azimuth, elevation in timestamps:
-        # Check line-of-sight to sun
-        exposed = check_line_of_sight(bench['geom'], bench['elevation'], 
-                                     azimuth, elevation, 'dsm_raster')
-        
-        # Insert result
-        cur.execute("""
-            INSERT INTO exposure (ts_id, bench_id, exposed, location)
-            VALUES (%s, %s, %s, %s)
-        """, (ts_id, bench_id, exposed, bench['geom']))
-    
-    conn.commit()
-    conn.close()
+| Function | Purpose |
+|----------|---------|
+| `generate_weekly_timestamps()` | Creates 7 days of 10-minute intervals (1,008 timestamps) |
+| `compute_weekly_sun_positions()` | Calculates sun azimuth/elevation using suncalc_postgres |
+| `compute_all_bench_horizons()` | Precomputes horizon profiles (2° bins to 8km) |
+| `compute_exposure_next_days_optimized(n)` | Batch computes exposure for N days |
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--year', type=int, required=True)
-    parser.add_argument('--parallel', type=int, default=cpu_count())
-    args = parser.parse_args()
-    
-    # Get all bench IDs
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM benches")
-    bench_ids = [row[0] for row in cur.fetchall()]
-    conn.close()
-    
-    # Process in parallel
-    with Pool(args.parallel) as pool:
-        pool.starmap(compute_bench_exposure, 
-                    [(bid, args.year) for bid in bench_ids])
+**Running the Pipeline:**
 
-if __name__ == '__main__':
-    main()
-```
-
-**Cron Schedule:**
 ```bash
-# Run incremental update every 6 months
-0 0 1 1,7 * cd /opt/sonnenbankerl && python precompute_exposure.py --year $(date +\%Y) --incremental
+# Full weekly recomputation (15-30 minutes)
+./compute_next_week.sh
 
-# Cleanup old data (older than 1 year)
-0 1 1 * * psql -d sonnenbankerl -c "SELECT drop_chunks('exposure', INTERVAL '1 year');"
+# Or manually:
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
 ```
+
+**Note:** Automated weekly cron job is not yet configured. Run manually as needed.
 
 ### 5. Deployment Options
 

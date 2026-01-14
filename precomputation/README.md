@@ -245,22 +245,26 @@ SET effective_cache_size = '4GB';
 
 ### Line-of-Sight Calculation
 
-The `is_exposed_optimized()` function performs:
-- Horizon gate from precomputed DEM profiles (2° bins to 8 km); if solar elevation is below the horizon angle, exposure is false.
-- Near-field LOS (≤500 m) with fine steps (~5 m) on DSM to capture local obstacles (trees/buildings).
-- Nighttime check (elevation <= 0 returns false).
+The `is_exposed_optimized()` function performs a two-stage visibility analysis:
 
+1. **Horizon Gate**: Precomputed DEM-based horizon profiles (2° bins to 8 km). If solar elevation is below the horizon angle for the current azimuth, exposure is false.
+2. **Near-Field LOS** (≤500 m): Fine-grained check on DSM to capture local obstacles like trees and buildings.
+
+**Algorithm Flow:**
 1. **Sun position**: Calculated using suncalc_postgres extension
-2. **Ray casting**: 200m ray from bench toward sun (5m steps)
-3. **DSM sampling**: Sample terrain height along ray
-4. **Obstacle detection**: Compare terrain height vs sun line
-5. **Result**: TRUE (sunny) or FALSE (shady)
+2. **Horizon gate**: Quick check against precomputed horizon profile
+3. **Near-field ray casting**: 500m ray from bench toward sun (5m steps)
+4. **DSM sampling**: Sample terrain height along ray using 1m DSM
+5. **Obstacle detection**: Compare terrain height vs sun line equation
+6. **Result**: TRUE (sunny) or FALSE (shady)
+7. **Nighttime skip**: Sun elevation ≤ 0° returns false immediately
 
 ### Key Parameters
 
-- **Ray distance**: 200m (max)
+- **Ray distance**: 500m (near-field LOS range)
 - **Step size**: 5m (sampling interval)
 - **Bench height**: DEM elevation + 1.2m (sitting height)
+- **Horizon bins**: 2° azimuth resolution out to 8 km
 - **Nighttime skip**: Sun elevation ≤ 0° (skipped for performance)
 
 ## Data Sources

@@ -19,14 +19,17 @@ backend/
 │   ├── config.py              # Configuration management
 │   ├── api/                   # API endpoint routes
 │   │   ├── benches.py         # Bench-related endpoints
-│   │   └── health.py          # Health check endpoint
+│   │   ├── health.py          # Health check endpoint
+│   │   └── weather.py         # Weather integration endpoint
 │   ├── models/                # Pydantic models
-│   │   └── bench.py           # Bench data models
+│   │   ├── bench.py           # Bench data models
+│   │   └── weather.py         # Weather data models
 │   ├── db/                    # Database layer
 │   │   ├── connection.py      # PostgreSQL connection pool
 │   │   └── queries.py         # SQL queries
 │   └── services/              # Business logic
-│       └── exposure.py        # Sun exposure calculations
+│       ├── exposure.py        # Sun exposure calculations
+│       └── weather.py         # GeoSphere Austria weather service
 ├── requirements.txt           # Python dependencies
 ├── Dockerfile                 # Docker container definition
 └── .dockerignore              # Docker build exclusions
@@ -96,8 +99,7 @@ curl "https://sonnenbankerl-api.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&
       "distance": 245.3,
       "current_status": "sunny",
       "sun_until": "2025-12-30T18:00:00Z",
-      "remaining_minutes": 210,
-      "status_note": null
+      "remaining_minutes": 210
     }
   ],
   "window_start": "2025-12-30T00:00:00Z",
@@ -132,6 +134,37 @@ curl "https://sonnenbankerl-api.ideanexus.cloud/api/benches/1"
 }
 ```
 
+### Get Current Weather
+
+**GET `/api/weather/current`**
+
+Returns current weather conditions from GeoSphere Austria. This is used as a "sunshine gate" - if no sunshine is reported, all benches appear shady.
+
+Query Parameters:
+- `refresh` (optional): Set to `true` to bypass cache and fetch fresh data
+
+**Example:**
+```bash
+curl "https://sonnenbankerl-api.ideanexus.cloud/api/weather/current"
+```
+
+**Response:**
+```json
+{
+  "is_sunny": true,
+  "sunshine_seconds": 480,
+  "station": "Graz Universitaet",
+  "cached": false,
+  "timestamp": "2025-12-30T15:30:00Z"
+}
+```
+
+**Notes:**
+- Data is cached for 10 minutes to reduce API calls
+- If the GeoSphere API is unavailable, cached data is still returned
+- Default station: 11290 (Graz Universitaet)
+- **Weather Gate**: The weather check is skipped by default (`skip_weather_check=True`) for local testing. To enable, pass `skip_weather_check=false` in the benches query or configure in production.
+
 ### Interactive Documentation
 
 **GET `/docs`**
@@ -161,14 +194,18 @@ The API uses PostgreSQL with PostGIS and TimescaleDB extensions.
 - `timestamps`: 10-minute interval timestamps
 - `sun_positions`: Precomputed sun azimuth/elevation
 - `exposure`: TimescaleDB hypertable with sun exposure data
+- `bench_horizon`: Precomputed horizon profiles (2° bins, 8km range) for efficient LOS checks
 
 See `database/migrations/` for full schema.
 
 ## Current Notes
 
-- Weather gate is temporarily skipped for local testing; re-enable when network/API access is stable.
-- Exposure depends on the imported benches and computed exposure window (7 days, 10-minute resolution).
-- Bench import currently uses a static insert list (21 benches); align SQL with the GeoJSON for future updates.
+- Weather API is fully implemented (see `/api/weather/current` endpoint above)
+- Weather gate is **skipped by default** (`skip_weather_check=True`) for local testing
+- To enable weather gate in production: configure backend to use `skip_weather_check=False` or pass in API request
+- Exposure depends on the imported benches and computed exposure window (7 days, 10-minute resolution)
+- Bench import uses static insert list (21 benches from graz_benches.geojson)
+- Horizon precomputation (`bench_horizon` table) enables efficient line-of-sight checks
 
 ## Deployment
 

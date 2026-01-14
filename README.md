@@ -34,25 +34,33 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
 - **Status**: Production, fully operational
 - **Database**: PostgreSQL 14 + PostGIS + TimescaleDB
 - **Data**: 21 benches (Stadtpark subset) from `data/osm/graz_benches.geojson`
-- **Pipeline**: Weekly exposure precomputation in DB (timestamps + sun_positions + exposure)
-- **Endpoints**: Health check, benches search, bench details
+- **Pipeline**: Weekly exposure precomputation in DB (timestamps + sun_positions + exposure + bench_horizon)
+- **Endpoints**: Health check, benches search, bench details, weather
 - **Documentation**: https://sonnenbankerl-api.ideanexus.cloud/docs
 
-### 🚧 In Progress
-- Mobile app development (Flutter)
-- Weather gate: currently skipped for local testing; re-enable once network is stable
+### 🚧 Frontend Test Page - WORKING
+- **Location**: `frontend/index.html` (Leaflet + MapTiler)
+- **Purpose**: Development and testing interface
+- **Features**: Interactive map, bench markers (yellow= sunny, blue= shady), real-time status
+- **Access**: Serve locally or use production API
 
-### 📋 Planned / Next
-- Automate GeoJSON-driven bench import (replace hardcoded INSERTs)
-- Refine LOS tuning and canopy handling
-- Re-enable live weather gate by default
+### 📋 Planned - Not Yet Started
+- **Mobile App (Flutter)**: iOS/Android application - development not yet started
+- **Automated Weekly Cron**: Currently requires manual execution of `./compute_next_week.sh`
+- **Weather Gate**: Currently disabled by default (`skip_weather_check=True`) for local testing; enable via API parameter for production use
 
 ## Features
 
-### Interactive Map (Planned)
-- Subtle OpenStreetMap humanitarian layer background
+### Frontend Test Page (Working)
+- Interactive Leaflet map with MapTiler tiles
 - Real-time user location tracking
 - Visual bench indicators (yellow for sunny, dark blue for shady)
+- Popup shows sun status and remaining time
+
+### Backend API (Live)
+- **URL**: https://sonnenbankerl-api.ideanexus.cloud
+- **Docs**: https://sonnenbankerl-api.ideanexus.cloud/docs
+- REST API for bench locations, sun exposure data, and weather conditions
 
 ### Smart Bench Analysis (Minimal Implementation)
 - **Sunny benches**: Display remaining sun exposure time
@@ -64,19 +72,15 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
   next estimated sunlight: 14.12.2025 10:12 | in 2 days 3 hours 14 min
   ```
 
-### Backend API (Live)
-- **URL**: https://sonnenbankerl-api.ideanexus.cloud
-- **Docs**: https://sonnenbankerl-api.ideanexus.cloud/docs
-- REST API for bench locations and sun exposure data
-
 ## Technical Stack
 
-### Frontend
+### Frontend (Test Page)
 | Component | Technology |
 |-----------|-----------|
-| Framework | Flutter |
-| Platform  | iOS / Android |
-| Map Layer | OpenStreetMap (Humanitarian) |
+| Framework | Static HTML + Vanilla JavaScript |
+| Map Library | Leaflet.js 1.9.4 |
+| Map Tiles | MapTiler toner-v2 |
+| Purpose | Development/testing interface |
 
 ### Data Sources
 | Source | Purpose | Details |
@@ -101,22 +105,23 @@ The system uses a **weekly rolling computation** approach:
 
 - **Dataset**: Binary sun exposure (sunny/shady) at 10-minute intervals
 - **Coverage**: Current week only (rolling 7-day window)
-- **Algorithm**: Sun position calculations (suncalc_postgres) + line-of-sight checks against 1m DSM
+- **Algorithm**: Sun position (suncalc_postgres) + horizon precomputation (2° bins, 8km) + near-field LOS (500m, 5m steps) against 1m DSM
 - **Bench Height**: DEM + 1.2m (upper body/head level)
 - **Storage**: TimescaleDB hypertables for time-series efficiency
 - **Processing**: Adaptive parallelization based on available hardware
 - **Updates**: Manual on-demand (run `./compute_next_week.sh` or execute SQL scripts)
 
 **Key Features:**
-- ✅ Pure PostgreSQL (no external Python scripts)
+- ✅ Pure SQL (database-first approach)
+- ✅ Horizon precomputation for efficient LOS checks
 - ✅ Adaptive performance (auto-detects CPU cores and memory)
 - ✅ 15-30 minute computation (vs hours/days for full year)
-- ✅ Optimized line-of-sight with pre-computed trigonometric values
 
 📄 [Precomputation Pipeline](../docs/sunshine_calculation_pipeline.md)
 
 #### Real-time Integration
-- Pre-computed sun/terrain data combined with live weather API
+- Pre-computed sun/terrain data combined with live weather API (GeoSphere Austria)
+- Weather gate is **skipped by default** for local testing
 - Fast query performance via pre-calculated profiles
 - Instant predictions without on-the-fly calculations
 
@@ -132,6 +137,9 @@ The backend API is **deployed and ready to use**:
 ```bash
 # Health check
 curl https://sonnenbankerl-api.ideanexus.cloud/health
+
+# Get current weather (GeoSphere Austria)
+curl "https://sonnenbankerl-api.ideanexus.cloud/api/weather/current"
 
 # Get benches near Graz Stadtpark (47.07°N, 15.44°E)
 curl "https://sonnenbankerl-api.ideanexus.cloud/api/benches?lat=47.07&lon=15.44&radius=1000"
@@ -153,12 +161,16 @@ curl https://sonnenbankerl-api.ideanexus.cloud/api/benches/1
 ```
 cd infrastructure/docker
 # clean
-psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
+psql -U postgres -d sonnenbankerl -c "TRUNCATE benches CASCADE; TRUNCATE sun_positions; TRUNCATE exposure; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
 # import benches (21) via precomputation/03_import_benches.sql or manual INSERT
 psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
 # timestamps + sun positions
 psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
 psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+# precompute horizons and exposure
+psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+```
 # exposure
 psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
 ```
