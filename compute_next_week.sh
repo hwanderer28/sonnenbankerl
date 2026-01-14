@@ -3,10 +3,11 @@
 # Weekly Exposure Pipeline - Complete Execution
 # =============================================================================
 # This script runs the complete weekly exposure computation pipeline:
-#   1. Generate weekly timestamps (today + 7 days)
-#   2. Compute sun positions for the week
-#   3. Compute sun exposure for all benches
-#   4. Display results
+#   1. Ensure suncalc_postgres is installed
+#   2. Generate weekly timestamps (today + 7 days)
+#   3. Compute sun positions for the week
+#   4. Compute sun exposure for all benches
+#   5. Display results
 #
 # Usage:
 #   ./compute_next_week.sh
@@ -16,13 +17,14 @@
 set -e  # Exit on error
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR/infrastructure/docker"
+cd "$SCRIPT_DIR/infrastructure/docker
 
 echo "=============================================="
 echo "Sonnenbankerl - Weekly Exposure Pipeline"
 echo "=============================================="
 echo ""
 echo "This pipeline will:"
+echo "  0. Ensure suncalc_postgres is installed"
 echo "  1. Clean old computation data"
 echo "  2. Generate timestamps for next 7 days"
 echo "  3. Compute sun positions (azimuth, elevation)"
@@ -34,6 +36,28 @@ echo ""
 echo "Estimated time: 15-30 minutes"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to cancel..."
+
+echo ""
+echo "Step 0: Ensuring suncalc_postgres is installed..."
+echo "----------------------------------------------"
+# Check if suncalc is installed, install if missing
+SUNFUNC_EXISTS=$(docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -tAc "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_sun_position');" 2>/dev/null || echo "f")
+if [ "$SUNFUNC_EXISTS" = "f" ] || [ "$SUNFUNC_EXISTS" = "" ]; then
+    echo "suncalc_postgres not found, installing..."
+    docker-compose --env-file .env exec -T postgres bash -c "psql -U postgres -d sonnenbankerl -f /var/lib/suncalc_postgres/suncalc/suncalc.sql" || \
+    docker-compose --env-file .env exec -T postgres bash -c "psql -U postgres -d sonnenbankerl -f /tmp/suncalc_postgres/suncalc/suncalc.sql"
+    
+    # Verify installation
+    SUNFUNC_EXISTS=$(docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -tAc "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_sun_position');")
+    if [ "$SUNFUNC_EXISTS" = "t" ]; then
+        echo "✅ suncalc_postgres installed successfully!"
+    else
+        echo "❌ ERROR: suncalc_postgres installation failed"
+        exit 1
+    fi
+else
+    echo "✅ suncalc_postgres already installed"
+fi
 
 echo ""
 echo "Step 1: Cleaning old computation data..."
@@ -86,3 +110,4 @@ echo "  SELECT * FROM exposure LIMIT 10;"
 echo "  SELECT * FROM get_exposure_computation_stats();"
 echo "  SELECT * FROM v_bench_stats;"
 echo ""
+
