@@ -19,14 +19,12 @@ RUN set -ex \
 # Add PostgreSQL bin to PATH for easier access
 ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
 
-# Clone suncalc_postgres repository during build to permanent location
+# Clone and install suncalc_postgres during build (before database initialization)
 RUN git clone https://github.com/olithissen/suncalc_postgres.git /var/lib/suncalc_postgres \
     && chmod -R 755 /var/lib/suncalc_postgres
 
-# Copy initialization script to docker-entrypoint-initdb.d
-# This will run automatically when the database is first initialized
-COPY init-suncalc.sh /docker-entrypoint-initdb.d/99-init-suncalc.sh
-RUN chmod +x /docker-entrypoint-initdb.d/99-init-suncalc.sh
+# Install suncalc functions into the template1 database so they're available in all new databases
+RUN psql -U postgres -d postgres -f /var/lib/suncalc_postgres/suncalc/suncalc.sql
 
 # Copy manual installation script (for troubleshooting if needed)
 COPY install_suncalc.sh /usr/local/bin/install_suncalc.sh
