@@ -17,7 +17,7 @@
 set -e  # Exit on error
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR/infrastructure/docker
+cd "$SCRIPT_DIR/infrastructure/docker"
 
 echo "=============================================="
 echo "Sonnenbankerl - Weekly Exposure Pipeline"
@@ -27,9 +27,9 @@ echo "This pipeline will:"
 echo "  0. Ensure suncalc_postgres is installed"
 echo "  1. Clean old computation data"
 echo "  2. Generate timestamps for next 7 days"
-echo "  3. Compute sun positions (azimuth, elevation)"
+echo "  3. Compute sun positions azimuth, elevation"
 echo "  4. Load exposure functions/config"
-echo "  5. Precompute DEM horizons (2° bins to 8 km)"
+echo "  5. Precompute DEM horizons 2° bins to 8 km"
 echo "  6. Compute exposure for all benches"
 echo "  7. Display results"
 echo ""
@@ -63,7 +63,7 @@ echo ""
 echo "Step 1: Cleaning old computation data..."
 echo "----------------------------------------------"
 # Ensure bench_horizon table exists before truncating
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "CREATE TABLE IF NOT EXISTS bench_horizon (bench_id INTEGER NOT NULL, azimuth_deg INTEGER NOT NULL, max_angle_deg DOUBLE PRECISION NOT NULL, PRIMARY KEY (bench_id, azimuth_deg));"
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c 'CREATE TABLE IF NOT EXISTS bench_horizon (bench_id INTEGER NOT NULL, azimuth_deg INTEGER NOT NULL, max_angle_deg DOUBLE PRECISION NOT NULL, PRIMARY KEY (bench_id, azimuth_deg));'
 docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
 
 echo ""
@@ -82,14 +82,14 @@ echo "----------------------------------------------"
 docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -f /precomputation/06_compute_exposure.sql
 
 echo ""
-echo "Step 5: Precomputing DEM horizons (this may take a few minutes)..."
+echo "Step 5: Precomputing DEM horizons this may take a few minutes..."
 echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c 'SELECT compute_all_bench_horizons();'
 
 echo ""
-echo "Step 6: Computing exposure (this takes the most time)..."
+echo "Step 6: Computing exposure this takes the most time..."
 echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c 'SELECT compute_exposure_next_days_optimized(7);'
 
 echo ""
 echo "Step 7: Displaying results..."
