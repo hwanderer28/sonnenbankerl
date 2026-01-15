@@ -39,7 +39,7 @@ read -p "Press Enter to continue or Ctrl+C to cancel..."
 echo ""
 echo "Step 1: Cleaning old computation data..."
 echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
 
 echo ""
 echo "Step 2: Generating weekly timestamps..."
