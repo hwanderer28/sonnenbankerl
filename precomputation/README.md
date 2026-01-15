@@ -1,96 +1,36 @@
 # Precomputation Pipeline
 
-This directory contains SQL scripts and documentation for the **weekly rolling sun exposure computation** using pure PostgreSQL. No external Python scripts are required.
+SQL scripts for weekly sun exposure computation using pure PostgreSQL. No external Python required.
 
 ## Quick Start
 
 ```bash
 # Run the complete weekly pipeline
-cd infrastructure/docker
 ./compute_next_week.sh
-```
-
-Or manually:
-
-```
-cd infrastructure/docker
-
-# Clear old data
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "
-DELETE FROM exposure;
-DELETE FROM sun_positions;
-DELETE FROM timestamps;
-DELETE FROM bench_horizon;
-"
-
-# Run pipeline steps
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
-
-# Precompute DEM-based horizons (2° bins to 8 km)
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
-
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
-```
-
-
-Or manually:
-
-```bash
-cd infrastructure/docker
-
-# Clear old data
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "
-DELETE FROM exposure;
-DELETE FROM sun_positions;
-DELETE FROM timestamps;
-"
-
-# Run pipeline steps
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
 ```
 
 ## Structure
 
 ```
 precomputation/
-├── 01_setup_extensions.sql          # Install PostgreSQL extensions
+├── 01_setup_extensions.sql          # Install PostGIS, TimescaleDB, suncalc_postgres
 ├── 02_import_rasters.sql            # DSM/DEM raster import verification
 ├── 03_import_benches.sql            # Import benches from OSM, update elevations
 ├── 04_generate_timestamps.sql       # Generate rolling 7-day timestamps
 ├── 05_compute_sun_positions.sql     # Compute sun positions for the week
 ├── 06_compute_exposure.sql          # Line-of-sight computation (optimized)
 ├── 07_compute_next_week.sql         # Results and statistics display
-├── 08_qgis_tables.sql               # QGIS visualization tables
-└── README.md                        # This file
-precomputation/
-├── 01_setup_extensions.sql          # Install PostgreSQL extensions
-├── 02_import_rasters.sql            # DSM/DEM raster import verification
-├── 03_import_benches.sql            # Import benches from OSM, update elevations
-├── 04_generate_timestamps.sql       # Generate rolling 7-day timestamps
-├── 05_compute_sun_positions.sql     # Compute sun positions for the week
-├── 06_compute_exposure.sql          # Line-of-sight computation (optimized)
-├── 07_compute_next_week.sql         # Results and statistics display
-├── compute_next_week.sh             # Shell script for full pipeline
-└── README.md                        # This file
+└── compute_next_week.sh             # Full pipeline automation
 ```
 
 ## Prerequisites
 
-- PostgreSQL 14+ with PostGIS, TimescaleDB, and suncalc_postgres extension (if missing, run inside the container: `/usr/local/bin/install_suncalc.sh`)
-- DSM/DEM raster files (GeoTIFF format) in `data/raw/` directory
-- OSM bench data in `data/osm/` directory (for reference)
-- Recommended: 4GB+ database memory for optimal performance
+- PostgreSQL 14+ with PostGIS, TimescaleDB
+- suncalc_postgres extension (installed automatically if missing)
+- DSM/DEM raster files in `data/raw/`
+- Bench GeoJSON in `data/osm/`
 
 ## Installation (Docker)
-
-### First Time Setup
 
 ```bash
 cd infrastructure/docker
@@ -99,96 +39,96 @@ cd infrastructure/docker
 docker-compose build postgres
 docker-compose up -d postgres
 
-# Wait for container to be ready
-sleep 5
+# Import data
+../import_data.sh  # Select option 3 (Both rasters and benches)
 ```
-
-### Import Data
-
-```bash
-# Verify and import rasters
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/02_import_rasters.sql
-
-# Import benches (includes elevation update from DEM)
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/03_import_benches.sql
-```
-
-### Run Precomputation
-
-```bash
-# Generate timestamps for current week
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
-
-# Compute sun positions
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
-
-# Precompute DEM-based horizons (2° bins to 8 km)
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
-
-# Compute exposure with horizon gate + near-field LOS
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
-
-# View weekly summary
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
-```
-
-### Horizon + LOS approach (current implementation)
-- DEM-based horizon profiles precomputed per bench in 2° bins out to 8 km (`bench_horizon`), using a downsampled 10 m DEM (`dem_raster_10m`) created by `import_data.sh` (the 1 m DEM stays for elevations).
-- **Horizon interpolation**: Linear interpolation between bins eliminates ~2° blind spots.
-- Exposure uses a horizon gate (solar elevation must exceed interpolated horizon angle) and a near-field LOS (≤500 m, adaptive steps) on the DSM.
-- **Adaptive steps**: 2m (0-100m), 5m (100-200m), 10m (200-500m) - ~40% faster than fixed 5m steps.
-- When rays leave raster coverage, they are treated as clear (not auto-blocking).
-- Ensure rasters cover the benches area (DSM/DEM in EPSG:3857). Use tiling on import to avoid memory issues.
-
-### Reset and rerun pipeline
-If rerunning from scratch:
-```bash
-# Clean computation tables (keeps benches)
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
-
-# Then run compute_next_week.sh (wrapper) or the manual steps above
-./compute_next_week.sh
-```
-
 
 ## Usage
 
-### Available Functions
+### Automated Pipeline
+
+```bash
+./compute_next_week.sh
+```
+
+### Manual Steps
+
+```bash
+cd infrastructure/docker
+
+# Clear old data
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
+
+# Run computation
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/04_generate_timestamps.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/05_compute_sun_positions.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/06_compute_exposure.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /migrations/004_add_horizon_constraint.sql
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
+```
+
+## Available Functions
 
 ```sql
--- Generate fresh timestamps for the week
+-- Generate fresh timestamps
 SELECT generate_weekly_timestamps();
 
--- Compute sun positions for the week
+-- Compute sun positions
 SELECT compute_weekly_sun_positions();
 
--- Precompute DEM horizons (2° bins to 8 km)
+-- Precompute horizons (2° bins to 8 km)
 SELECT compute_all_bench_horizons();
 
--- Compute exposure for next 7 days (recommended)
+-- Compute exposure for next 7 days
 SELECT compute_exposure_next_days_optimized(7);
 
 -- Compute exposure for specific date range
 SELECT compute_exposure_optimized('2026-01-10', '2026-01-16', 25);
 
--- Test single bench on a specific date
-SELECT compute_single_bench_exposure(7, CURRENT_DATE);
-
 -- Monitor progress
 SELECT * FROM get_exposure_computation_stats();
-
--- View bench statistics
-SELECT * FROM v_bench_stats;
 ```
 
-### View Results
+## Algorithm
+
+### Horizon + LOS Approach
+
+1. **Horizon Gate**: Precomputed DEM-based horizon profiles (2° bins with interpolation out to 8 km)
+2. **Near-Field LOS** (≤500 m): Adaptive step check on DSM
+
+### Adaptive Step Sizes
+
+| Range | Step | Samples |
+|-------|------|---------|
+| 0-100m | 2m | 50 |
+| 100-200m | 5m | 20 |
+| 200-500m | 10m | 30 |
+
+~40% faster than fixed 5m steps.
+
+### Horizon Interpolation
+
+Linear interpolation between 2° bins eliminates ~2° blind spots.
+
+## Expected Runtime
+
+| Step | Time | Records |
+|------|------|---------|
+| Timestamps | < 1s | 1,008 |
+| Sun Positions | < 1s | 1,008 |
+| Horizon Precomputation | 2-5 min | 180 bins × benches |
+| Exposure | 10-20 min | ~18,250 |
+
+## View Results
 
 ```sql
 -- Overall statistics
 SELECT * FROM get_exposure_computation_stats();
 
 -- Daily breakdown
-SELECT 
+SELECT
     t.ts::DATE as date,
     COUNT(*) as records,
     ROUND(COUNT(CASE WHEN e.exposed THEN 1 END) * 100.0 / COUNT(*), 1) as sunny_pct
@@ -198,7 +138,7 @@ GROUP BY t.ts::DATE
 ORDER BY t.ts::DATE;
 
 -- Top 10 sunniest benches
-SELECT 
+SELECT
     b.id,
     COUNT(CASE WHEN e.exposed THEN 1 END) as sunny_hours,
     ROUND(COUNT(CASE WHEN e.exposed THEN 1 END) * 100.0 / 365, 1) as sunny_pct
@@ -209,199 +149,45 @@ ORDER BY sunny_hours DESC
 LIMIT 10;
 ```
 
-## Performance
-
-### Adaptive Configuration
-
-The pipeline automatically adjusts settings based on hardware:
-
-| Hardware | Workers | Work Mem | Batch Size |
-|----------|---------|----------|------------|
-| High-end (8+ cores) | 8 | 1GB | 25 |
-| Mid-range (4-7 cores) | 4 | 512MB | 15 |
-| Low-end/VPS | 2 | 256MB | 10 |
-
-### Expected Runtime
-
-| Step | Time | Records |
-|------|------|---------|
-| Timestamps | < 1s | 1,008 |
-| Sun Positions | < 1s | 1,008 |
-| Horizon Precomputation | 2-5 min | 180 bins × benches |
-| Exposure | 10-20 min | ~18,250 (with adaptive steps) |
-
-### Manual Tuning
-
-```sql
--- Increase parallel workers
-SET max_parallel_workers_per_gather = 8;
-SET max_parallel_workers = 8;
-
--- Increase work memory
-SET work_mem = '1GB';
-
--- Optimize for SSD
-SET random_page_cost = 1.1;
-SET effective_cache_size = '4GB';
-```
-
-## Algorithm
-
-### Line-of-Sight Calculation
-
-The `is_exposed_optimized()` function performs a two-stage visibility analysis:
-
-1. **Horizon Gate**: Precomputed DEM-based horizon profiles (2° bins with interpolation to 8 km). If solar elevation is below the interpolated horizon angle for the current azimuth, exposure is false.
-2. **Near-Field LOS** (≤500 m): Adaptive step check on DSM to capture local obstacles like trees and buildings.
-
-**Algorithm Flow:**
-1. **Sun position**: Calculated using suncalc_postgres extension
-2. **Horizon gate**: Quick check against interpolated horizon profile
-3. **Near-field ray casting**: 500m ray from bench toward sun (adaptive steps: 2m/5m/10m)
-4. **DSM sampling**: Sample terrain height along ray using 1m DSM
-5. **Obstacle detection**: Compare terrain height vs sun line equation
-6. **Result**: TRUE (sunny) or FALSE (shady)
-7. **Nighttime skip**: Sun elevation ≤ 0° returns false immediately
-
-### Key Parameters
-
-- **Ray distance**: 500m (near-field LOS range)
-- **Step size**: Adaptive (2m near, 5m mid, 10m far) - ~40% faster than fixed 5m
-- **Bench height**: DEM elevation + 1.2m sitting height (included in bench.elevation during import)
-- **Horizon bins**: 2° azimuth resolution with linear interpolation out to 8 km
-- **Nighttime skip**: Sun elevation ≤ 0° (skipped for performance)
-
 ## Data Sources
 
-### DSM/DEM Rasters
-- **Source**: Bundesamt für Eich- und Vermessungswesen (BEV)
-- **Resolution**: 1m (DSM), 10m (DEM)
-- **Format**: GeoTIFF
-- **Coordinate System**: EPSG:3857 (Web Mercator)
-
-### Bench Locations
-- **Source**: OpenStreetMap
-- **Query**: Overpass API for amenity=bench in Graz
-- **Format**: GeoJSON
-- **Coordinate System**: EPSG:4326 (WGS84)
-
-## Coordinate Systems
-
-| Data Type | SRID | Description |
-|-----------|------|-------------|
-| Benches | EPSG:4326 | WGS84 lat/lon |
-| Rasters | EPSG:3857 | Web Mercator |
-| Transformation | Automatic | In `is_exposed_optimized()` |
+- **DSM/DEM**: Bundesamt für Eich- und Vermessungswesen (BEV), 1m/10m resolution
+- **Benches**: OpenStreetMap, amenity=bench in Graz
 
 ## Monitoring
 
-### During Computation
-
 ```sql
--- Check progress
-SELECT 
-    COUNT(*) as records,
-    COUNT(DISTINCT bench_id) as benches
-FROM exposure;
-
--- Check current activity
-SELECT 
-    pid,
-    state,
-    NOW() - query_start as duration,
-    query
-FROM pg_stat_activity
-WHERE state = 'active';
-```
-
-### After Completion
-
-```sql
--- Overall statistics
-SELECT * FROM get_exposure_computation_stats();
+-- Check progress during computation
+SELECT COUNT(*) as records, COUNT(DISTINCT bench_id) as benches FROM exposure;
 
 -- Database size
-SELECT 
+SELECT
     pg_size_pretty(pg_total_relation_size('exposure')) as exposure_size,
     pg_size_pretty(pg_total_relation_size('dsm_raster')) as dsm_size;
-
--- Query performance
-SELECT query, calls, total_time, mean_time
-FROM pg_stat_statements
-WHERE query LIKE '%exposure%'
-ORDER BY total_time DESC
-LIMIT 5;
 ```
 
 ## Troubleshooting
 
-### Out of Memory
+### Out of memory
 ```sql
--- Reduce parallel workers temporarily
 SET max_parallel_workers_per_gather = 2;
 SET work_mem = '256MB';
 ```
 
-### Slow Computation
+### No benches found
 ```sql
--- Optimize PostgreSQL configuration
-ALTER SYSTEM SET shared_buffers = '2GB';
-ALTER SYSTEM SET effective_cache_size = '6GB';
-SELECT pg_reload_conf();
-```
-
-### No Data Generated
-```sql
--- Check if benches exist
 SELECT COUNT(*) FROM benches;
-
--- Check if rasters exist
-SELECT COUNT(*) FROM dsm_raster;
-SELECT COUNT(*) FROM dem_raster;
-
--- Verify timestamps
-SELECT MIN(ts), MAX(ts) FROM timestamps;
+-- If 0, re-run: ../import_data.sh (option 2)
 ```
 
-### Wrong Elevations
+### Wrong elevations
 ```sql
--- Re-run elevation update
 SELECT update_bench_elevations();
-
--- Check elevation range
 SELECT MIN(elevation), MAX(elevation) FROM benches;
-```
-
-## Maintenance
-
-### Clear All Computed Data
-
-```sql
-DELETE FROM exposure;
-DELETE FROM sun_positions;
-DELETE FROM timestamps;
-```
-
-### Reset Bench Elevations
-
-```sql
--- Set to NULL first, then update
-UPDATE benches SET elevation = NULL;
-SELECT update_bench_elevations();
-```
-
-### Check Index Health
-
-```sql
--- Check for missing indexes
-SELECT indexname, indexdef 
-FROM pg_indexes 
-WHERE tablename IN ('benches', 'timestamps', 'sun_positions', 'exposure');
 ```
 
 ## Documentation
 
-- [Detailed Pipeline Documentation](../docs/sunshine_calculation_pipeline.md)
-- [Backend Architecture](../docs/architecture.md)
+- [Sunshine Calculation Pipeline](../docs/sunshine_calculation_pipeline.md)
 - [Database Schema](../database/README.md)
-- [Deployment Guide](../docs/DEPLOYMENT.md)
+- [Backend Architecture](../docs/architecture.md)

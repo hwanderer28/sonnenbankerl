@@ -1,4 +1,0 @@
--- Deprecated: sample data seeding removed.
--- This migration intentionally does nothing to keep databases empty by default.
--- Bench, timestamp, sun position, and exposure data should be loaded via the
--- precomputation pipeline (see precomputation/README.md and docs/sunshine_calculation_pipeline.md).

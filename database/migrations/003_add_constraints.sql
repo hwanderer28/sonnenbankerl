@@ -1,25 +1,14 @@
 -- =============================================================================
 -- Database Constraints Migration
 -- =============================================================================
--- Adds foreign key, NOT NULL, and CHECK constraints for data integrity
+-- Adds NOT NULL, CHECK constraints for data integrity
 -- Run after 001_initial_schema.sql and 002_create_indexes.sql
+-- Safe for base schema tables only
 -- =============================================================================
 
 -- ============================================================================
--- 1. Add Foreign Key Constraint on bench_horizon
+-- 1. Add NOT NULL Constraints on exposure table
 -- ============================================================================
--- Prevents orphaned horizon data when a bench is deleted
-ALTER TABLE bench_horizon
-ADD CONSTRAINT fk_bench_horizon_bench
-FOREIGN KEY (bench_id) REFERENCES benches(id) ON DELETE CASCADE;
-
-COMMENT ON CONSTRAINT fk_bench_horizon_bench ON bench_horizon
-IS 'Ensures horizon data is deleted when bench is removed';
-
--- ============================================================================
--- 2. Add NOT NULL Constraints on exposure table
--- ============================================================================
--- These columns must always have values for valid exposure records
 ALTER TABLE exposure
 ALTER COLUMN ts_id SET NOT NULL,
 ALTER COLUMN bench_id SET NOT NULL;
@@ -28,7 +17,7 @@ COMMENT ON COLUMN exposure.ts_id IS 'Timestamp of exposure calculation';
 COMMENT ON COLUMN exposure.bench_id IS 'Bench being evaluated';
 
 -- ============================================================================
--- 3. Add CHECK Constraints for valid ranges
+-- 2. Add CHECK Constraints for valid ranges
 -- ============================================================================
 
 -- Sun position azimuth must be 0-360 degrees
@@ -54,7 +43,7 @@ COMMENT ON CONSTRAINT chk_elevation_positive ON benches
 IS 'Ensures elevation is non-negative if provided';
 
 -- ============================================================================
--- 4. Add Missing Indexes
+-- 3. Add Missing Indexes
 -- ============================================================================
 
 -- Index for JOIN performance on exposure(bench_id)
@@ -72,7 +61,6 @@ BEGIN
     RAISE NOTICE 'Constraints migration completed!';
     RAISE NOTICE '';
     RAISE NOTICE 'Constraints added:';
-    RAISE NOTICE '  - FK: bench_horizon -> benches';
     RAISE NOTICE '  - NOT NULL: exposure(ts_id, bench_id)';
     RAISE NOTICE '  - CHECK: sun_positions azimuth/elevation ranges';
     RAISE NOTICE '  - CHECK: benches elevation >= 0';
