@@ -64,12 +64,12 @@ docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbanker
 echo ""
 echo "Step 6: Computing exposure (this takes the most time)..."
 echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c 'SELECT compute_exposure_next_days_optimized(3);'
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c 'SELECT compute_exposure_next_days_optimized(7);'
 
 echo ""
 echo "Step 7: Adding database constraints..."
 echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -f /migrations/004_add_horizon_constraint.sql
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -f /precomputation/../migrations/004_add_horizon_constraint.sql
 
 echo ""
 echo "Step 8: Displaying results..."

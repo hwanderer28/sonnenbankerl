@@ -56,43 +56,26 @@ BEGIN
     );
 
     -- Check if suncalc_postgres function is available
-    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_sun_position') THEN
-        -- Compute sun positions using suncalc_postgres functions
-        BEGIN
-            INSERT INTO sun_positions (ts_id, azimuth_deg, elevation_deg)
-            SELECT
-                t.id as ts_id,
-                degrees((sp).azimuth) as azimuth_deg,
-                degrees((sp).altitude) as elevation_deg
-            FROM timestamps t,
-                 LATERAL get_sun_position(t.ts, graz_latitude, graz_longitude) AS sp
-            WHERE t.ts::DATE BETWEEN start_date AND end_date;
+    IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_sun_position') THEN
+        RAISE EXCEPTION 'suncalc_postgres extension is not installed. Please rebuild the postgres container with suncalc_postgres support.';
+    END IF;
 
-            GET DIAGNOSTICS computed_count = ROW_COUNT;
-        EXCEPTION WHEN OTHERS THEN
-            RAISE WARNING 'Error computing sun positions: %', SQLERRM;
-            computed_count := 0;
-        END;
-    ELSE
-        -- Use realistic sample data if extension not available
+    -- Compute sun positions using suncalc_postgres functions
+    BEGIN
         INSERT INTO sun_positions (ts_id, azimuth_deg, elevation_deg)
         SELECT
-            t.id AS ts_id,
-            ((day_fraction * 360.0) - 180.0) AS azimuth_deg,
-            GREATEST(0.0, 60.0 * SIN(PI() * day_fraction)) AS elevation_deg
-        FROM (
-            SELECT
-                ts,
-                id,
-                -- Compute day fraction from UTC midnight (timestamps are stored as TIMESTAMPTZ in UTC)
-                ((EXTRACT(EPOCH FROM ts) % 86400) / 86400.0) AS day_fraction
-            FROM timestamps
-            WHERE ts::DATE BETWEEN start_date AND end_date
-        ) t;
+            t.id as ts_id,
+            degrees((sp).azimuth) as azimuth_deg,
+            degrees((sp).altitude) as elevation_deg
+        FROM timestamps t,
+             LATERAL get_sun_position(t.ts, graz_latitude, graz_longitude) AS sp
+        WHERE t.ts::DATE BETWEEN start_date AND end_date;
 
         GET DIAGNOSTICS computed_count = ROW_COUNT;
-        RAISE WARNING 'suncalc_postgres extension not available - using sample sun data (synthetic day curve)';
-    END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Error computing sun positions: %', SQLERRM;
+        computed_count := 0;
+    END;
 
     RAISE NOTICE 'Computed % sun positions', computed_count;
 

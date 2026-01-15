@@ -19,9 +19,16 @@ RUN set -ex \
 # Add PostgreSQL bin to PATH for easier access
 ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
 
-# Clone suncalc_postgres repository during build to permanent location
+# Clone suncalc_postgres repository during build
 RUN git clone https://github.com/olithissen/suncalc_postgres.git /var/lib/suncalc_postgres \
     && chmod -R 755 /var/lib/suncalc_postgres
+
+# Install suncalc_postgres extension during build (run as postgres user)
+USER postgres
+RUN psql -U postgres -d postgres -f /var/lib/suncalc_postgres/suncalc/suncalc.sql 2>/dev/null || true
+
+# Switch back to root for remaining setup
+USER root
 
 # Copy manual installation script (for troubleshooting if needed)
 COPY install_suncalc.sh /usr/local/bin/install_suncalc.sh
