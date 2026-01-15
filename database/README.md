@@ -14,6 +14,7 @@ PostgreSQL database with PostGIS and TimescaleDB extensions for spatial and time
 ```
 database/
 └── migrations/                    # SQL migration files (run automatically at init)
+    ├── 000_install_suncalc.sql    # Install suncalc_postgres extension
     ├── 001_initial_schema.sql     # All tables: benches, timestamps, sun_positions, exposure, bench_horizon
     ├── 002_create_indexes.sql     # Performance indexes
     └── 003_add_constraints.sql    # NOT NULL, CHECK constraints
