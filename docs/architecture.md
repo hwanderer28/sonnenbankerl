@@ -101,28 +101,29 @@ CREATE INDEX timestamps_ts_idx ON timestamps(ts);
 
 -- Precomputed sun positions for Graz
 CREATE TABLE sun_positions (
-    ts_id INT REFERENCES timestamps(id),
-    azimuth_deg FLOAT,
-    elevation_deg FLOAT,
+    ts_id INT NOT NULL REFERENCES timestamps(id) ON DELETE CASCADE,
+    azimuth_deg FLOAT NOT NULL CHECK (azimuth_deg >= 0 AND azimuth_deg < 360),
+    elevation_deg FLOAT NOT NULL CHECK (elevation_deg >= -90 AND elevation_deg <= 90),
     PRIMARY KEY (ts_id)
 );
 
 -- Sun exposure data (TimescaleDB hypertable)
 CREATE TABLE exposure (
-    ts_id INT REFERENCES timestamps(id),
-    bench_id INT REFERENCES benches(id),
+    ts_id INT NOT NULL REFERENCES timestamps(id) ON DELETE CASCADE,
+    bench_id INT NOT NULL REFERENCES benches(id) ON DELETE CASCADE,
     exposed BOOLEAN NOT NULL,
     PRIMARY KEY (ts_id, bench_id)
 );
 SELECT create_hypertable('exposure', 'ts_id', chunk_time_interval => INTERVAL '1 month');
 CREATE INDEX exposure_bench_ts_idx ON exposure (bench_id, ts_id DESC);
+CREATE INDEX exposure_bench_id_idx ON exposure (bench_id);
 
 -- Precomputed horizon profiles for efficient LOS checks
 CREATE TABLE bench_horizon (
-    bench_id INT REFERENCES benches(id) ON DELETE CASCADE,
-    azimuth_bin INT CHECK (azimuth_bin >= 0 AND azimuth_bin < 180),
-    horizon_angle_deg FLOAT,
-    PRIMARY KEY (bench_id, azimuth_bin)
+    bench_id INT NOT NULL REFERENCES benches(id) ON DELETE CASCADE,
+    azimuth_deg INTEGER NOT NULL,
+    max_angle_deg DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (bench_id, azimuth_deg)
 );
 
 -- Digital Surface Model and Digital Elevation Model
@@ -140,7 +141,9 @@ CREATE TABLE bench_horizon (
 - TimescaleDB compression for exposure table
 - Spatial indexes on geography columns
 - Partitioning by time (automatic with TimescaleDB)
-- Connection pooling (pgBouncer)
+- Connection pooling (asyncpg with statement caching)
+- Batch database queries (eliminates N+1 pattern)
+- Adaptive line-of-sight step sizes (~40% faster)
 
 ### 2. REST API Service
 

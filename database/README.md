@@ -16,6 +16,7 @@ database/
 └── migrations/                    # SQL migration files (run automatically)
     ├── 001_initial_schema.sql     # Core tables and extensions
     ├── 002_create_indexes.sql     # Performance indexes
+    ├── 003_add_constraints.sql    # Data integrity constraints (FK, NOT NULL, CHECK)
     └── 003_sample_data.sql        # (deprecated) no-op placeholder; pipelines load data
 ```
 
@@ -40,20 +41,47 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /docker-entryp
 **benches**
 - Stores bench locations from OpenStreetMap
 - PostGIS GEOGRAPHY type for spatial queries
-- Elevation from DEM + 1.2m (sitting height)
+- Elevation from DEM + 1.2m (sitting height, added during import)
 
 **timestamps**
-- 10-minute interval timestamps for 2026
-- ~52,560 rows per year
+- 10-minute interval timestamps for the rolling 7-day window
+- ~1,008 rows per week
 
 **sun_positions**
 - Precomputed sun azimuth and elevation
 - One row per timestamp
+- Validated with CHECK constraints (azimuth 0-360°, elevation -90° to 90°)
 
 **exposure** (TimescaleDB hypertable)
 - Binary sun exposure data (sunny/shady)
 - Partitioned by time (monthly chunks)
 - Primary data table for API queries
+- Foreign keys ensure data integrity
+
+**bench_horizon**
+- Precomputed horizon profiles for efficient LOS checks
+- 2° azimuth bins out to 8 km
+- FK constraint prevents orphaned horizon data
+
+## Data Integrity Constraints
+
+The `003_add_constraints.sql` migration adds critical data integrity constraints:
+
+### Foreign Key Constraints
+- `bench_horizon.bench_id` → `benches(id)` ON DELETE CASCADE
+- Ensures horizon data is automatically deleted when a bench is removed
+
+### NOT NULL Constraints
+- `exposure.ts_id` - Timestamp reference required
+- `exposure.bench_id` - Bench reference required
+
+### CHECK Constraints
+- `sun_positions.azimuth_deg` - Must be >= 0 AND < 360
+- `sun_positions.elevation_deg` - Must be >= -90 AND <= 90
+- `benches.elevation` - Must be >= 0 (if set)
+
+### Additional Indexes
+- `exposure_bench_id_idx` - Improves JOIN performance for bench-specific queries
 
 ## Data Loading
 
@@ -86,6 +114,14 @@ docker-compose exec postgres pg_dump -U postgres sonnenbankerl | gzip > backup_$
 **Restore:**
 ```bash
 gunzip < backup_20251230.sql.gz | docker-compose exec -T postgres psql -U postgres sonnenbankerl
+```
+
+## Running Migrations
+
+New constraints migration (`003_add_constraints.sql`) can be run manually:
+
+```bash
+docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /migrations/003_add_constraints.sql
 ```
 
 ## Performance

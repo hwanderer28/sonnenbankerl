@@ -184,3 +184,52 @@ async def check_database_health() -> bool:
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return False
+
+
+async def get_bench_status_batch(
+    bench_ids: list[int], current_time: datetime
+) -> list[dict]:
+    """
+    Get current exposure and next change for multiple benches in a single query.
+    Reduces N+1 query pattern from ~40 queries to 1 for 20 benches.
+    
+    Args:
+        bench_ids: List of bench IDs
+        current_time: Current timestamp (rounded to 10-min interval)
+        
+    Returns:
+        List of dicts with bench_id, exposed, and next_change_ts
+    """
+    if not bench_ids:
+        return []
+    
+    pool = await get_pool()
+    
+    query = """
+        SELECT
+            b.id as bench_id,
+            e.exposed,
+            next_sun.ts as next_change_ts
+        FROM unnest($1::int[]) WITH ORDINALITY AS t(bench_id, ord)
+        JOIN benches b ON b.id = t.bench_id
+        LEFT JOIN exposure e ON e.bench_id = b.id
+            AND e.ts_id = (SELECT id FROM timestamps WHERE ts = $2::timestamptz)
+        LEFT JOIN LATERAL (
+            SELECT t.ts FROM exposure e2
+            JOIN timestamps t ON t.id = e2.ts_id
+            WHERE e2.bench_id = b.id
+              AND t.ts > $2::timestamptz
+              AND e2.exposed != COALESCE(e.exposed, FALSE)
+            ORDER BY t.ts
+            LIMIT 1
+        ) next_sun ON true
+        ORDER BY t.ord;
+    """
+    
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, bench_ids, current_time)
+            return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Error batch querying bench status: {e}")
+        raise

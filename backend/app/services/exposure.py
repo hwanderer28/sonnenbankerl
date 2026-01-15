@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional, Tuple
 import logging
 
-from app.db.queries import get_current_exposure, get_next_sun_change
+from app.db.queries import get_current_exposure, get_next_sun_change, get_bench_status_batch
 from app.services.weather import is_sunny as check_weather_sunny
 
 logger = logging.getLogger(__name__)
@@ -12,6 +12,73 @@ logger = logging.getLogger(__name__)
 def round_to_10min(dt: datetime) -> datetime:
     """Round datetime to nearest 10-minute interval"""
     return dt.replace(second=0, microsecond=0, minute=(dt.minute // 10) * 10)
+
+
+async def get_bench_sun_status_batch(
+    bench_ids: list[int],
+    skip_weather_check: bool = True
+) -> dict[int, Tuple[str, Optional[datetime], Optional[int]]]:
+    """
+    Get current sun status for multiple benches in a single query.
+    More efficient than calling get_bench_sun_status() for each bench.
+
+    Args:
+        bench_ids: List of bench IDs
+        skip_weather_check: If True, skip weather gate (for testing/debugging)
+
+    Returns:
+        Dict mapping bench_id to tuple of (status, sun_until, remaining_minutes)
+    """
+    now = datetime.now(timezone.utc)
+    rounded_time = round_to_10min(now)
+    result = {}
+    
+    # Weather gate: If no sunshine, all benches are shady
+    weather_sunny = True
+    if not skip_weather_check:
+        weather_sunny = await check_weather_sunny()
+    
+    if not weather_sunny:
+        for bench_id in bench_ids:
+            result[bench_id] = ("shady", None, None)
+        return result
+    
+    try:
+        # Single batch query for all benches
+        batch_results = await get_bench_status_batch(bench_ids, rounded_time)
+        
+        for row in batch_results:
+            bench_id = row['bench_id']
+            exposed = row['exposed']
+            next_change = row['next_change_ts']
+            
+            if exposed is None:
+                result[bench_id] = ("unknown", None, None)
+                continue
+            
+            status = "sunny" if exposed else "shady"
+            
+            if next_change:
+                if next_change.tzinfo is None:
+                    next_change = next_change.replace(tzinfo=timezone.utc)
+                time_diff = next_change - now
+                remaining_minutes = int(time_diff.total_seconds() / 60)
+                result[bench_id] = (status, next_change, remaining_minutes)
+            else:
+                result[bench_id] = (status, None, None)
+        
+        # Handle benches not in results (shouldn't happen with unnest, but safe fallback)
+        for bench_id in bench_ids:
+            if bench_id not in result:
+                result[bench_id] = ("unknown", None, None)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error batch getting sun status: {e}")
+        for bench_id in bench_ids:
+            result[bench_id] = ("unknown", None, None)
+        return result
 
 
 async def get_bench_sun_status(

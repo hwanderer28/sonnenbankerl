@@ -3,7 +3,7 @@ import logging
 
 from app.models.bench import BenchesResponse, BenchListItem, BenchDetail, Location
 from app.db.queries import get_benches_within_radius, get_bench_by_id, get_data_window
-from app.services.exposure import get_bench_sun_status
+from app.services.exposure import get_bench_sun_status_batch
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +30,18 @@ async def get_benches(
     logger.info(f"Fetching benches near ({lat}, {lon}) within {radius}m")
     
     try:
-        # Get benches from database
         benches = await get_benches_within_radius(lat, lon, radius)
         window_start, window_end = await get_data_window()
         
-        # Enrich with sun status
+        if not benches:
+            return BenchesResponse(benches=[], window_start=window_start, window_end=window_end)
+        
+        bench_ids = [b['id'] for b in benches]
+        status_map = await get_bench_sun_status_batch(bench_ids)
+        
         result = []
         for bench in benches:
-            status, sun_until, remaining_minutes = await get_bench_sun_status(bench['id'])
+            status, sun_until, remaining_minutes = status_map.get(bench['id'], ("unknown", None, None))
             status_note = None
             
             result.append(BenchListItem(
@@ -77,14 +81,13 @@ async def get_bench(bench_id: int):
     logger.info(f"Fetching bench {bench_id}")
     
     try:
-        # Get bench from database
         bench = await get_bench_by_id(bench_id)
         
         if not bench:
             raise HTTPException(status_code=404, detail="Bench not found")
         
-        # Get sun status
-        status, sun_until, remaining_minutes = await get_bench_sun_status(bench_id)
+        status_map = await get_bench_sun_status_batch([bench_id])
+        status, sun_until, remaining_minutes = status_map.get(bench_id, ("unknown", None, None))
         status_note = None
         
         return BenchDetail(
