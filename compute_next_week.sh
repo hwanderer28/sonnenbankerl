@@ -29,8 +29,7 @@ echo "  3. Compute sun positions azimuth, elevation"
 echo "  4. Load exposure functions"
 echo "  5. Precompute DEM horizons (2° bins to 8 km)"
 echo "  6. Compute exposure for all benches"
-echo "  7. Add database constraints (bench_horizon FK)"
-echo "  8. Display results"
+echo "  7. Display results"
 echo ""
 echo "Estimated time: 15-30 minutes"
 echo ""
@@ -39,7 +38,7 @@ read -p "Press Enter to continue or Ctrl+C to cancel..."
 echo ""
 echo "Step 1: Cleaning old computation data..."
 echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE;"
+docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c "TRUNCATE exposure; TRUNCATE sun_positions; DELETE FROM timestamps WHERE ts >= CURRENT_DATE; TRUNCATE bench_horizon;"
 
 echo ""
 echo "Step 2: Generating weekly timestamps..."
@@ -67,12 +66,7 @@ echo "----------------------------------------------"
 docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -c 'SELECT compute_exposure_next_days_optimized(7);'
 
 echo ""
-echo "Step 7: Adding database constraints..."
-echo "----------------------------------------------"
-docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -f /precomputation/../migrations/004_add_horizon_constraint.sql
-
-echo ""
-echo "Step 8: Displaying results..."
+echo "Step 7: Displaying results..."
 echo "----------------------------------------------"
 docker-compose --env-file .env exec -T postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
 

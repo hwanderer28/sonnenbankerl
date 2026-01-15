@@ -60,16 +60,6 @@ $$ LANGUAGE plpgsql;
 -- Apply performance settings
 SELECT configure_performance_settings() as performance_config;
 
--- Horizon data storage (2° bins, up to 8 km)
-CREATE TABLE IF NOT EXISTS bench_horizon (
-    bench_id INTEGER NOT NULL,
-    azimuth_deg INTEGER NOT NULL,
-    max_angle_deg DOUBLE PRECISION NOT NULL,
-    PRIMARY KEY (bench_id, azimuth_deg)
-);
-
-CREATE INDEX IF NOT EXISTS idx_bench_horizon_bench_azimuth ON bench_horizon (bench_id, azimuth_deg);
-
 -- Compute per-bench horizon angles using DEM
 CREATE OR REPLACE FUNCTION compute_bench_horizon(
     p_bench_id INTEGER,

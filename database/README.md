@@ -14,10 +14,9 @@ PostgreSQL database with PostGIS and TimescaleDB extensions for spatial and time
 ```
 database/
 └── migrations/                    # SQL migration files (run automatically at init)
-    ├── 001_initial_schema.sql     # Core tables: benches, timestamps, sun_positions, exposure
+    ├── 001_initial_schema.sql     # All tables: benches, timestamps, sun_positions, exposure, bench_horizon
     ├── 002_create_indexes.sql     # Performance indexes
-    ├── 003_add_constraints.sql    # NOT NULL, CHECK constraints (safe for base tables)
-    └── 004_add_horizon_constraint.sql  # FK for bench_horizon (run in compute_next_week.sh)
+    └── 003_add_constraints.sql    # NOT NULL, CHECK constraints
 ```
 
 ## Automatic Migration
@@ -65,10 +64,7 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /docker-entryp
 
 ## Data Integrity Constraints
 
-Constraints are applied in two phases:
-
-### Phase 1: Base Tables (`003_add_constraints.sql`)
-Applied automatically when database container initializes.
+All constraints are applied automatically when the database container initializes.
 
 **NOT NULL Constraints**
 - `exposure.ts_id` - Timestamp reference required
@@ -79,15 +75,14 @@ Applied automatically when database container initializes.
 - `sun_positions.elevation_deg` - Must be >= -90 AND <= 90
 - `benches.elevation` - Must be >= 0 (if set)
 
+**Foreign Key Constraints**
+- `sun_positions.ts_id` → `timestamps(id)` ON DELETE CASCADE
+- `exposure.ts_id` → `timestamps(id)` ON DELETE CASCADE
+- `exposure.bench_id` → `benches(id)` ON DELETE CASCADE
+- `bench_horizon.bench_id` → `benches(id)` ON DELETE CASCADE
+
 **Additional Indexes**
 - `exposure_bench_id_idx` - Improves JOIN performance for bench-specific queries
-
-### Phase 2: Horizon Table (`004_add_horizon_constraint.sql`)
-Applied during `compute_next_week.sh` Step 7 (after `06_compute_exposure.sql` creates bench_horizon).
-
-**Foreign Key Constraints**
-- `bench_horizon.bench_id` → `benches(id)` ON DELETE CASCADE
-- Ensures horizon data is automatically deleted when a bench is removed
 
 ## Data Loading
 
@@ -120,17 +115,6 @@ docker-compose exec postgres pg_dump -U postgres sonnenbankerl | gzip > backup_$
 **Restore:**
 ```bash
 gunzip < backup_20251230.sql.gz | docker-compose exec -T postgres psql -U postgres sonnenbankerl
-```
-
-## Running Migrations
-
-**Phase 1 migrations** (`003_add_constraints.sql` and earlier) run automatically at container init.
-
-**Phase 2 migration** (`004_add_horizon_constraint.sql`) runs during `compute_next_week.sh`:
-
-```bash
-# Run manually if needed (after 06_compute_exposure.sql has run)
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /migrations/004_add_horizon_constraint.sql
 ```
 
 ## Performance

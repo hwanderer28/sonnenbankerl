@@ -65,11 +65,28 @@ COMMENT ON COLUMN exposure.exposed IS 'TRUE if bench is exposed to direct sunlig
 SELECT create_hypertable('exposure', 'ts_id', chunk_time_interval => 8640, if_not_exists => TRUE);
 
 -- ============================================================================
+-- Bench Horizon Table
+-- ============================================================================
+-- Precomputed horizon profiles for efficient line-of-sight calculations
+-- Stores the maximum obstruction angle at each azimuth direction
+CREATE TABLE IF NOT EXISTS bench_horizon (
+    bench_id INT NOT NULL REFERENCES benches(id) ON DELETE CASCADE,
+    azimuth_deg INTEGER NOT NULL,          -- Azimuth direction (0-360 degrees)
+    max_angle_deg DOUBLE PRECISION NOT NULL,  -- Maximum obstruction angle in degrees
+    PRIMARY KEY (bench_id, azimuth_deg)
+);
+
+COMMENT ON TABLE bench_horizon IS 'Precomputed horizon profiles for efficient LOS calculations';
+COMMENT ON COLUMN bench_horizon.bench_id IS 'Bench reference';
+COMMENT ON COLUMN bench_horizon.azimuth_deg IS 'Azimuth direction (0-360°)';
+COMMENT ON COLUMN bench_horizon.max_angle_deg IS 'Maximum obstruction angle from horizon';
+
+-- ============================================================================
 -- Success Message
 -- ============================================================================
 DO $$
 BEGIN
     RAISE NOTICE 'Schema initialized successfully';
     RAISE NOTICE 'PostGIS and TimescaleDB extensions enabled';
-    RAISE NOTICE 'Tables created: benches, timestamps, sun_positions, exposure';
+    RAISE NOTICE 'Tables created: benches, timestamps, sun_positions, exposure, bench_horizon';
 END $$;

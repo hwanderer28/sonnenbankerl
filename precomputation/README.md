@@ -65,7 +65,6 @@ docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputatio
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/06_compute_exposure.sql
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_all_bench_horizons();"
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimized(7);"
-docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /migrations/004_add_horizon_constraint.sql
 docker-compose exec postgres psql -U postgres -d sonnenbankerl -f /precomputation/07_compute_next_week.sql
 ```
 

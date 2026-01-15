@@ -57,8 +57,7 @@ Benches → Timestamps (weekly) → Sun Positions → Exposure
 | 4 | Load exposure functions | < 1s |
 | 5 | Precompute DEM horizons | 2-5 min |
 | 6 | Compute exposure | 10-20 min |
-| 7 | Add database constraints | < 1s |
-| 8 | Display results | < 1s |
+| 7 | Display results | < 1s |
 
 ## File Structure
 
