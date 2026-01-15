@@ -65,7 +65,8 @@ BEGIN
         INSERT INTO sun_positions (ts_id, azimuth_deg, elevation_deg)
         SELECT
             t.id as ts_id,
-            degrees((sp).azimuth) as azimuth_deg,
+            -- Normalize azimuth to 0-360 range (suncalc returns -180 to +180)
+            floor(((degrees((sp).azimuth) + 360) % 360))::INTEGER as azimuth_deg,
             degrees((sp).altitude) as elevation_deg
         FROM timestamps t,
              LATERAL get_sun_position(t.ts, graz_latitude, graz_longitude) AS sp
