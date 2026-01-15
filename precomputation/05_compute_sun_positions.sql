@@ -66,7 +66,8 @@ BEGIN
         SELECT
             t.id as ts_id,
             -- Normalize azimuth to 0-360 range (suncalc returns -180 to +180)
-            floor(((degrees((sp).azimuth) + 360) % 360))::INTEGER as azimuth_deg,
+            -- Cast to INTEGER before modulo (modulo doesn't work with double precision)
+            ((floor(degrees((sp).azimuth))::INTEGER + 360) % 360) as azimuth_deg,
             degrees((sp).altitude) as elevation_deg
         FROM timestamps t,
              LATERAL get_sun_position(t.ts, graz_latitude, graz_longitude) AS sp
