@@ -33,7 +33,7 @@ async def _fetch_openmeteo_forecast(lat: float, lon: float) -> Optional[dict]:
     params = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "cloudcover_total,sunshine_duration",
+        "hourly": "cloudcover,sunshine_duration",
         "forecast_hours": 168,
         "timezone": "Europe/Vienna",
     }
@@ -64,7 +64,7 @@ async def _fetch_openmeteo_forecast(lat: float, lon: float) -> Optional[dict]:
 async def _parse_forecast(data: dict) -> List[dict]:
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
-    cloudcover = hourly.get("cloudcover_total", [])
+    cloudcover = hourly.get("cloudcover", [])
     sunshine = hourly.get("sunshine_duration", [])
 
     forecasts = []
