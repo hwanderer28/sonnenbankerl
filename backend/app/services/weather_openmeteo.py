@@ -142,8 +142,8 @@ async def update_all_region_forecasts() -> Dict[str, int]:
     query = """
         SELECT DISTINCT
             'graz_' || floor(ST_Y(geom::geometry)::numeric * 10)::int || '_' || floor(ST_X(geom::geometry)::numeric * 10)::int as region_id,
-            round(ST_Y(geom::geometry)::numeric, 1) as lat,
-            round(ST_X(geom::geometry)::numeric, 1) as lon
+            ST_Y(geom::geometry)::numeric as lat,
+            ST_X(geom::geometry)::numeric as lon
         FROM benches
         WHERE geom IS NOT NULL
     """
@@ -159,8 +159,8 @@ async def update_all_region_forecasts() -> Dict[str, int]:
 
     for region in regions:
         region_id = region["region_id"]
-        lat = region["lat"]
-        lon = region["lon"]
+        lat = float(region["lat"])
+        lon = float(region["lon"])
 
         stored, success = await update_weather_for_region(lat, lon)
         results[region_id] = stored
