@@ -23,9 +23,6 @@ ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
 RUN git clone https://github.com/olithissen/suncalc_postgres.git /var/lib/suncalc_postgres \
     && chmod -R 755 /var/lib/suncalc_postgres
 
-# Install suncalc functions during build (only if not already installed)
-RUN su postgres -c "psql -d postgres -c \"SELECT 1 WHERE EXISTS (SELECT FROM pg_proc WHERE proname = 'get_sun_position')\" >/dev/null 2>&1 || psql -d postgres -f /var/lib/suncalc_postgres/suncalc/suncalc.sql"
-
 # Switch back to postgres user
 USER postgres
 
