@@ -16,7 +16,7 @@ def round_to_10min(dt: datetime) -> datetime:
 
 async def get_bench_sun_status_batch(
     bench_ids: list[int],
-    skip_weather_check: bool = True
+    skip_weather_check: bool = False
 ) -> dict[int, Tuple[str, Optional[datetime], Optional[int]]]:
     """
     Get current sun status for multiple benches in a single query.
@@ -82,7 +82,7 @@ async def get_bench_sun_status_batch(
 
 
 async def get_bench_sun_status(
-    bench_id: int, skip_weather_check: bool = True
+    bench_id: int, skip_weather_check: bool = False
 ) -> Tuple[str, Optional[datetime], Optional[int]]:
     """
     Get current sun status for a bench
