@@ -1,17 +1,33 @@
-from datetime import datetime, timedelta
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 import logging
 
-from app.db.queries import get_current_exposure, get_next_sun_change, get_bench_status_batch
+from app.db.queries import (
+    get_current_exposure,
+    get_next_sun_change,
+    get_bench_status_batch,
+    get_bench_by_id,
+)
 from app.services.weather import is_sunny as check_weather_sunny
+from app.services.weather_openmeteo import (
+    is_sunny_at_time,
+    get_next_sunny_time,
+    update_weather_for_region,
+)
 
 logger = logging.getLogger(__name__)
+
+CLOUD_COVER_THRESHOLD = 20
 
 
 def round_to_10min(dt: datetime) -> datetime:
     """Round datetime to nearest 10-minute interval"""
     return dt.replace(second=0, microsecond=0, minute=(dt.minute // 10) * 10)
+
+
+def round_to_hour(dt: datetime) -> datetime:
+    """Round datetime to nearest hour"""
+    return dt.replace(minute=0, second=0, microsecond=0)
 
 
 async def get_bench_sun_status_batch(
@@ -30,50 +46,56 @@ async def get_bench_sun_status_batch(
         Dict mapping bench_id to tuple of (status, sun_until, remaining_minutes)
     """
     now = datetime.now(timezone.utc)
-    rounded_time = round_to_10min(now)
+    rounded_time = round_to_hour(now)
     result = {}
-    
-    # Weather gate: If no sunshine, all benches are shady
-    weather_sunny = True
-    if not skip_weather_check:
-        weather_sunny = await check_weather_sunny()
-    
-    if not weather_sunny:
-        for bench_id in bench_ids:
-            result[bench_id] = ("shady", None, None)
-        return result
-    
+
     try:
-        # Single batch query for all benches
         batch_results = await get_bench_status_batch(bench_ids, rounded_time)
-        
+
         for row in batch_results:
             bench_id = row['bench_id']
-            exposed = row['exposed']
-            next_change = row['next_change_ts']
-            
-            if exposed is None:
+            clear_sky_exposed = row['exposed']
+
+            if clear_sky_exposed is None:
                 result[bench_id] = ("unknown", None, None)
                 continue
-            
-            status = "sunny" if exposed else "shady"
-            
+
+            bench = await get_bench_by_id(bench_id)
+            if bench is None:
+                result[bench_id] = ("unknown", None, None)
+                continue
+
+            lat = bench['lat']
+            lon = bench['lon']
+
+            is_weather_sunny = await is_sunny_at_time(lat, lon, rounded_time)
+
+            if is_weather_sunny is False:
+                effective_status = "shady"
+            elif is_weather_sunny is True:
+                effective_status = "sunny"
+            else:
+                effective_status = "sunny" if clear_sky_exposed else "shady"
+
+            next_change = await get_next_sun_change_with_weather(
+                bench_id, lat, lon, rounded_time, effective_status == "sunny"
+            )
+
             if next_change:
                 if next_change.tzinfo is None:
                     next_change = next_change.replace(tzinfo=timezone.utc)
                 time_diff = next_change - now
                 remaining_minutes = int(time_diff.total_seconds() / 60)
-                result[bench_id] = (status, next_change, remaining_minutes)
+                result[bench_id] = (effective_status, next_change, remaining_minutes)
             else:
-                result[bench_id] = (status, None, None)
-        
-        # Handle benches not in results (shouldn't happen with unnest, but safe fallback)
+                result[bench_id] = (effective_status, None, None)
+
         for bench_id in bench_ids:
             if bench_id not in result:
                 result[bench_id] = ("unknown", None, None)
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Error batch getting sun status: {e}")
         for bench_id in bench_ids:
@@ -81,11 +103,65 @@ async def get_bench_sun_status_batch(
         return result
 
 
+async def get_next_sun_change_with_weather(
+    bench_id: int,
+    lat: float,
+    lon: float,
+    current_time: datetime,
+    current_is_sunny: bool
+) -> Optional[datetime]:
+    """
+    Get next sun status change considering both clear-sky data and weather forecasts.
+
+    Args:
+        bench_id: Bench ID
+        lat: Bench latitude
+        lon: Bench longitude
+        current_time: Current time
+        current_is_sunny: Current effective sunny status
+
+    Returns:
+        Timestamp of next status change, or None
+    """
+    now = datetime.now(timezone.utc)
+    search_end = now + timedelta(hours=48)
+
+    target_status = not current_is_sunny
+    candidate_times = []
+
+    check_time = current_time + timedelta(minutes=10)
+    while check_time < search_end:
+        clear_sky_exposed = await get_current_exposure(bench_id, check_time)
+        if clear_sky_exposed is None:
+            check_time += timedelta(hours=1)
+            continue
+
+        is_weather_sunny = await is_sunny_at_time(lat, lon, check_time)
+
+        if target_status:
+            if is_weather_sunny is True:
+                return check_time
+            elif is_weather_sunny is None and clear_sky_exposed:
+                candidate_times.append(check_time)
+        else:
+            if is_weather_sunny is False:
+                return check_time
+            elif is_weather_sunny is None and not clear_sky_exposed:
+                candidate_times.append(check_time)
+
+        check_time += timedelta(hours=1)
+
+    if candidate_times:
+        return candidate_times[0]
+
+    return None
+
+
 async def get_bench_sun_status(
     bench_id: int, skip_weather_check: bool = False
 ) -> Tuple[str, Optional[datetime], Optional[int]]:
     """
-    Get current sun status for a bench
+    Get current sun status for a bench with weather-aware predictions.
 
     Args:
         bench_id: Bench ID
@@ -94,45 +170,51 @@ async def get_bench_sun_status(
     Returns:
         Tuple of (status, sun_until, remaining_minutes)
         - status: "sunny", "shady", or "unknown"
-        - sun_until: Timestamp when status changes (or None)
+        - sun_until: Timestamp when status changes to opposite (considering weather)
         - remaining_minutes: Minutes until status changes (or None)
     """
     now = datetime.now(timezone.utc)
-    rounded_time = round_to_10min(now)
+    rounded_time = round_to_hour(now)
 
     try:
-        # Weather gate: If no sunshine, all benches are shady
-        if not skip_weather_check:
-            weather_sunny = await check_weather_sunny()
-            if not weather_sunny:
-                logger.debug(
-                    f"Weather gate: no sunshine, bench {bench_id} marked as shady"
-                )
-                return "shady", None, None
+        bench = await get_bench_by_id(bench_id)
+        if bench is None:
+            logger.warning(f"Bench {bench_id} not found")
+            return "unknown", None, None
 
-        # Get current exposure status from precomputed data
-        exposed = await get_current_exposure(bench_id, rounded_time)
+        lat = bench['lat']
+        lon = bench['lon']
 
-        if exposed is None:
+        clear_sky_exposed = await get_current_exposure(bench_id, rounded_time)
+
+        if clear_sky_exposed is None:
             logger.warning(f"No exposure data for bench {bench_id} at {rounded_time}")
             return "unknown", None, None
 
-        status = "sunny" if exposed else "shady"
+        is_weather_sunny = await is_sunny_at_time(lat, lon, rounded_time)
 
-        # Get next change time
-        next_change = await get_next_sun_change(bench_id, rounded_time, exposed)
+        if is_weather_sunny is False:
+            effective_status = "shady"
+        elif is_weather_sunny is True:
+            effective_status = "sunny"
+        else:
+            effective_status = "sunny" if clear_sky_exposed else "shady"
+
+        next_change = await get_next_sun_change_with_weather(
+            bench_id, lat, lon, rounded_time, effective_status == "sunny"
+        )
 
         if next_change:
-            # Ensure next_change is timezone-aware to avoid naive/aware subtraction errors
             if next_change.tzinfo is None:
                 next_change = next_change.replace(tzinfo=timezone.utc)
 
             time_diff = next_change - now
             remaining_minutes = int(time_diff.total_seconds() / 60)
-            return status, next_change, remaining_minutes
+            if remaining_minutes < 0:
+                remaining_minutes = None
+            return effective_status, next_change, remaining_minutes
         else:
-            # No change found in available data
-            return status, None, None
+            return effective_status, None, None
 
     except Exception as e:
         logger.error(f"Error getting sun status for bench {bench_id}: {e}")

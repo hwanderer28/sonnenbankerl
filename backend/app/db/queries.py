@@ -233,3 +233,39 @@ async def get_bench_status_batch(
     except Exception as e:
         logger.error(f"Error batch querying bench status: {e}")
         raise
+
+
+async def get_weather_adjusted_exposure(bench_id: int, target_time: datetime) -> Optional[bool]:
+    pool = await get_pool()
+
+    query = """
+        SELECT get_weather_adjusted_exposure($1, $2::timestamptz) as is_sunny;
+    """
+
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, bench_id, target_time)
+            return row['is_sunny'] if row else None
+    except Exception as e:
+        logger.error(f"Error querying weather-adjusted exposure for bench {bench_id}: {e}")
+        raise
+
+
+async def get_next_sunny_with_weather(
+    bench_id: int,
+    from_time: datetime,
+    max_hours: int = 48
+) -> Optional[datetime]:
+    pool = await get_pool()
+
+    query = """
+        SELECT get_next_sunny_period($1, $2::timestamptz, $3) as next_sunny;
+    """
+
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, bench_id, from_time, max_hours)
+            return row['next_sunny'] if row else None
+    except Exception as e:
+        logger.error(f"Error querying next sunny with weather for bench {bench_id}: {e}")
+        raise

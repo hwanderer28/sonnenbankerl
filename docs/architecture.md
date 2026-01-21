@@ -9,8 +9,8 @@ Backend infrastructure for the Sonnenbankerl application.
 │                      Flutter Mobile App                     │
 │                    (iOS/Android Clients)                    │
 └──────────────────────┬──────────────────────────────────────┘
-                        │ HTTPS/REST API
-                        │
+                         │ HTTPS/REST API
+                         │
 ┌──────────────────────▼──────────────────────────────────────┐
 │                     YOUR VPS SERVER                         │
 │  ┌───────────────────────────────────────────────────────┐  │
@@ -43,6 +43,12 @@ Backend infrastructure for the Sonnenbankerl application.
 │  │  │  - Precomputed sun/shade data                    │  │ │
 │  │  │  - 10-min intervals for 7-day window             │  │ │
 │  │  └──────────────────────────────────────────────────┘  │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │  weather_cache                                   │  │ │
+│  │  │  - Hourly cloud cover forecasts (48h)            │  │ │
+│  │  │  - Updated every 5 min                           │  │ │
+│  │  │  - Region-based (50km grid)                      │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐  │
@@ -53,16 +59,21 @@ Backend infrastructure for the Sonnenbankerl application.
 │  └───────────────────────────────────────────────────────┘  │
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │      Monitoring & Logging                             │  │
+│  │      Weather Scheduler                                │  │
+│  │      - Fetches Open-Meteo forecasts every 5 min       │  │
+│  │      - Stores in weather_cache table                  │  │
+│  │      - Cleanup old records (7 day retention)          │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
-                        │
-                        │ External API calls
-                        │
-          ┌─────────────▼────────────┐
-          │  GeoSphere Austria API   │
-          │  (Weather data)          │
-          └──────────────────────────┘
+                         │
+                         │ External API calls
+                         │
+           ┌─────────────▼────────────┐
+           │    Open-Meteo API        │
+           │  (Weather forecasts)     │
+           │  - Cloud cover %         │
+           │  - Sunshine duration     │
+           └──────────────────────────┘
 ```
 
 ## Component Breakdown
@@ -111,7 +122,7 @@ CREATE TABLE exposure (
     exposed BOOLEAN NOT NULL,
     PRIMARY KEY (ts_id, bench_id)
 );
-SELECT create_hypertable('exposure', 'ts_id', chunk_time_interval => INTERVAL '1 month');
+SELECT create_hypertable('exposure', 'ts_id', chunk_time_interval => 8640);
 CREATE INDEX exposure_bench_ts_idx ON exposure (bench_id, ts_id DESC);
 CREATE INDEX exposure_bench_id_idx ON exposure (bench_id);
 
@@ -123,6 +134,19 @@ CREATE TABLE bench_horizon (
     PRIMARY KEY (bench_id, azimuth_deg)
 );
 
+-- Weather forecasts (cloud cover, Open-Meteo)
+CREATE TABLE weather_cache (
+    region_id VARCHAR(50) NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    forecast_time TIMESTAMPTZ NOT NULL,
+    cloud_cover_percent INTEGER,
+    sunshine_duration_seconds INTEGER,
+    is_sunny BOOLEAN GENERATED AS (cloud_cover_percent < 20) STORED,
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (region_id, forecast_time)
+);
+
 -- Raster tables (loaded via raster2pgsql)
 -- dsm_raster: 1m resolution surface model
 -- dem_raster: ground elevation model
@@ -130,6 +154,7 @@ CREATE TABLE bench_horizon (
 
 **Storage Estimates:**
 - Weekly exposure data: ~10-20 MB
+- Weather cache (48h × regions): ~1-5 MB
 - DSM/DEM rasters for Graz: 500 MB - 2 GB
 
 **Performance Optimizations:**
@@ -138,6 +163,7 @@ CREATE TABLE bench_horizon (
 - Partitioning by time (automatic with TimescaleDB)
 - Batch database queries (eliminates N+1 pattern)
 - Adaptive line-of-sight step sizes (~40% faster)
+- Region-based weather caching (50km grid)
 
 ### 2. REST API Service
 
@@ -210,9 +236,18 @@ GET  /api/benches/{bench_id}
 
 ### 4. External Services
 
-**GeoSphere Austria API**
-- Weather data for cloud cover
-- Used to mark benches as "shady" when overcast
+**Open-Meteo API**
+- Hourly cloud cover forecasts for 48+ hours
+- Updates every 5-10 minutes
+- Free, no API key required
+- Endpoint: `https://api.open-meteo.com/v1/forecast`
+- Parameters: `cloudcover_total`, `sunshine_duration`
+- Sunny threshold: `cloud_cover_percent < 20%`
+
+**GeoSphere Austria API** (legacy/current fallback)
+- Current weather conditions from TAWES stations
+- Sunshine duration in seconds (10-minute window)
+- Used as fallback if Open-Meteo unavailable
 
 ## Deployment
 
