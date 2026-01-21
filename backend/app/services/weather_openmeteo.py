@@ -140,12 +140,13 @@ async def update_all_region_forecasts() -> Dict[str, int]:
     pool = await get_pool()
 
     query = """
-        SELECT DISTINCT
+        SELECT DISTINCT ON (region_id)
             'graz_' || floor(ST_Y(geom::geometry)::numeric * 10)::int || '_' || floor(ST_X(geom::geometry)::numeric * 10)::int as region_id,
-            ST_Y(geom::geometry)::numeric as lat,
-            ST_X(geom::geometry)::numeric as lon
+            round(ST_Y(geom::geometry)::numeric, 1) as lat,
+            round(ST_X(geom::geometry)::numeric, 1) as lon
         FROM benches
         WHERE geom IS NOT NULL
+        ORDER BY region_id
     """
 
     results = {}

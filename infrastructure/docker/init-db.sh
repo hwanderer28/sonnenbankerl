@@ -34,10 +34,15 @@ else
     exit 1
 fi
 
-# Run all migrations in order (sorted numerically)
+# Run migrations in order (skip 000 as suncalc is already installed)
 for migration in $(ls -1 "$MIGRATIONS_DIR"/*.sql | sort -V); do
+    filename=$(basename "$migration")
+    if [ "$filename" = "000_install_suncalc.sql" ]; then
+        echo "Skipping $filename (suncalc already installed)"
+        continue
+    fi
     if [ -f "$migration" ]; then
-        echo "Running: $migration"
+        echo "Running: $filename"
         psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$migration" || {
             echo "ERROR: Migration $migration failed"
             exit 1

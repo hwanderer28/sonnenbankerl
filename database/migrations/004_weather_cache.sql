@@ -123,7 +123,7 @@ BEGIN
     -- Apply weather threshold (cloud_cover < 20% = sunny)
     v_result := v_cloud_cover < 20;
 
-    RAISE DEBUG 'Weather-adjusted exposure for bench % at %: clear_sky=%, cloud_cover=%%, result=%',
+    RAISE DEBUG 'Weather-adjusted exposure for bench % at %: clear_sky=%, cloud_cover=%, result=%',
                 p_bench_id, p_forecast_time, v_clear_sky_exposed, v_cloud_cover, v_result;
 
     RETURN v_result;

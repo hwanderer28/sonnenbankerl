@@ -26,7 +26,9 @@ def round_to_10min(dt: datetime) -> datetime:
 
 
 def round_to_hour(dt: datetime) -> datetime:
-    """Round datetime to nearest hour"""
+    """Round datetime to nearest hour (30-minute threshold)"""
+    if dt.minute >= 30:
+        dt = dt + timedelta(hours=1)
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
