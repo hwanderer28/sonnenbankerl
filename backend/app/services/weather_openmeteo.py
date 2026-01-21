@@ -286,3 +286,15 @@ async def get_weather_summary(lat: float, lon: float) -> dict:
         logger.error(f"Error getting weather summary for {region_id}: {e}")
 
     return {"region_id": region_id, "error": "Unable to fetch weather data"}
+
+
+async def run_weather_update_once():
+    """Run weather update immediately (for testing/manual runs)."""
+    logger.info("Running immediate weather update...")
+    results = await update_all_region_forecasts()
+    total = sum(results.values())
+    logger.info(f"Weather update complete: {total} hours across {len(results)} regions")
+
+    deleted = await cleanup_old_forecasts(168)
+    if deleted > 0:
+        logger.info(f"Cleaned up {deleted} old forecast records")
