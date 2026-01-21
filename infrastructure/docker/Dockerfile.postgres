@@ -33,9 +33,9 @@ USER root
 COPY install_suncalc.sh /usr/local/bin/install_suncalc.sh
 RUN chmod +x /usr/local/bin/install_suncalc.sh
 
-# Copy init script to docker-entrypoint-initdb.d for automatic execution
-COPY init-suncalc.sh /docker-entrypoint-initdb.d/init-suncalc.sh
-RUN chmod +x /docker-entrypoint-initdb.d/init-suncalc.sh
+# Copy init script (runs migrations only on fresh database)
+COPY init-db.sh /docker-entrypoint-initdb.d/init-db.sh
+RUN chmod +x /docker-entrypoint-initdb.d/init-db.sh
 
 # Switch back to postgres user
 USER postgres

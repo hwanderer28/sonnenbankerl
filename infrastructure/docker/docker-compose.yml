@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../../database/migrations:/docker-entrypoint-initdb.d:ro
+      - ../../database/migrations:/migrations:ro
       - ../../data/raw:/data/raw:ro  # Mount raster data (DSM/DEM files)
       - ../../precomputation:/precomputation:ro  # Mount SQL scripts
       - ../../data/osm:/data/osm:ro  # Mount bench GeoJSON data
@@ -83,3 +83,4 @@ networks:
 
 volumes:
   postgres_data:
+    name: sonnenbankerl_postgres_data
