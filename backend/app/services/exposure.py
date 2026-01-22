@@ -72,15 +72,13 @@ async def get_bench_sun_status_batch(
 
             is_weather_sunny = await is_sunny_at_time(lat, lon, rounded_time)
 
-            if is_weather_sunny is False:
-                effective_status = "shady"
-            elif is_weather_sunny is True:
-                effective_status = "sunny"
-            else:
-                effective_status = "shady"
+            is_effectively_sunny = (
+                is_weather_sunny is True and clear_sky_exposed
+            )
+            effective_status = "sunny" if is_effectively_sunny else "shady"
 
             next_change = await get_next_sun_change_with_weather(
-                bench_id, lat, lon, rounded_time, effective_status == "sunny"
+                bench_id, lat, lon, rounded_time, is_effectively_sunny
             )
 
             if next_change:
@@ -115,6 +113,10 @@ async def get_next_sun_change_with_weather(
     """
     Get next sun status change considering both clear-sky data and weather forecasts.
 
+    A bench is effectively sunny only when BOTH:
+    1. Weather is sunny (cloud_cover < threshold)
+    2. Bench has clear-sky line-of-sight to sun
+
     Args:
         bench_id: Bench ID
         lat: Bench latitude
@@ -131,7 +133,9 @@ async def get_next_sun_change_with_weather(
     target_status = not current_is_sunny
     candidate_times = []
 
-    check_time = current_time + timedelta(minutes=10)
+    rounded_time = current_time.replace(minute=0, second=0, microsecond=0)
+    check_time = rounded_time + timedelta(hours=1)
+
     while check_time < search_end:
         clear_sky_exposed = await get_current_exposure(bench_id, check_time)
         if clear_sky_exposed is None:
@@ -140,15 +144,19 @@ async def get_next_sun_change_with_weather(
 
         is_weather_sunny = await is_sunny_at_time(lat, lon, check_time)
 
+        is_effectively_sunny = (
+            is_weather_sunny is True and clear_sky_exposed
+        )
+
         if target_status:
-            if is_weather_sunny is True:
-                return check_time
-            elif is_weather_sunny is None and clear_sky_exposed:
-                candidate_times.append(check_time)
-        else:
-            if is_weather_sunny is False:
+            if is_effectively_sunny:
                 return check_time
             elif is_weather_sunny is None and not clear_sky_exposed:
+                candidate_times.append(check_time)
+        else:
+            if not is_effectively_sunny:
+                return check_time
+            elif is_weather_sunny is None and clear_sky_exposed:
                 candidate_times.append(check_time)
 
         check_time += timedelta(hours=1)
@@ -195,15 +203,13 @@ async def get_bench_sun_status(
 
         is_weather_sunny = await is_sunny_at_time(lat, lon, rounded_time)
 
-        if is_weather_sunny is False:
-            effective_status = "shady"
-        elif is_weather_sunny is True:
-            effective_status = "sunny"
-        else:
-            effective_status = "shady"
+        is_effectively_sunny = (
+            is_weather_sunny is True and clear_sky_exposed
+        )
+        effective_status = "sunny" if is_effectively_sunny else "shady"
 
         next_change = await get_next_sun_change_with_weather(
-            bench_id, lat, lon, rounded_time, effective_status == "sunny"
+            bench_id, lat, lon, rounded_time, is_effectively_sunny
         )
 
         if next_change:
