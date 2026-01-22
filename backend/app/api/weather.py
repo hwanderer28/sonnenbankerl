@@ -7,6 +7,7 @@ from app.models.weather import WeatherResponse
 from app.services.weather import get_current_weather
 from app.services.weather_openmeteo import (
     is_sunny_at_time,
+    get_cloud_cover_at_time,
     get_next_sunny_time,
     get_weather_summary,
     update_weather_for_region,
@@ -108,9 +109,10 @@ async def check_forecast_sunny(
     check_time = at or datetime.now(timezone.utc)
 
     try:
-        cloud_cover = await is_sunny_at_time(lat, lon, check_time)
+        cloud_cover_percent = await get_cloud_cover_at_time(lat, lon, check_time)
+        is_sunny = await is_sunny_at_time(lat, lon, check_time)
 
-        if cloud_cover is None:
+        if cloud_cover_percent is None:
             return {
                 "time": check_time.isoformat(),
                 "is_sunny": None,
@@ -120,9 +122,9 @@ async def check_forecast_sunny(
 
         return {
             "time": check_time.isoformat(),
-            "is_sunny": cloud_cover,
-            "cloud_cover_percent": None,
-            "status": "cloudy" if not cloud_cover else "sunny"
+            "is_sunny": is_sunny,
+            "cloud_cover_percent": cloud_cover_percent,
+            "status": "cloudy" if not is_sunny else "sunny"
         }
     except Exception as e:
         logger.error(f"Error checking sunny status: {e}")
@@ -195,7 +197,7 @@ async def trigger_weather_update():
     logger.info("Manual weather update triggered via API")
 
     try:
-        run_weather_update_once()
+        await run_weather_update_once()
         return {
             "status": "success",
             "message": "Weather update completed"
