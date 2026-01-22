@@ -193,11 +193,23 @@ async def get_cloud_cover_at_time(
             row = await conn.fetchrow(query, region_id, target_hour)
             if row:
                 cache_valid = _is_cache_valid(row["fetched_at"])
+                if not cache_valid:
+                    logger.debug(f"Weather cache stale for {region_id} at {target_hour}, triggering background refresh")
+                    asyncio.create_task(_trigger_background_refresh(lat, lon))
                 return row["cloud_cover_percent"]
+            logger.warning(f"No weather data found for region {region_id} at {target_hour}")
             return None
     except Exception as e:
         logger.error(f"Error getting cloud cover for region {region_id}: {e}")
         return None
+
+
+async def _trigger_background_refresh(lat: float, lon: float):
+    """Trigger background refresh of weather data without blocking."""
+    try:
+        await update_weather_for_region(lat, lon)
+    except Exception as e:
+        logger.error(f"Background weather refresh failed for {lat}, {lon}: {e}")
 
 
 async def is_sunny_at_time(lat: float, lon: float, target_time: datetime) -> Optional[bool]:

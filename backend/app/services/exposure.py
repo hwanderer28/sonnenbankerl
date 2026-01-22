@@ -77,7 +77,7 @@ async def get_bench_sun_status_batch(
             elif is_weather_sunny is True:
                 effective_status = "sunny"
             else:
-                effective_status = "sunny" if clear_sky_exposed else "shady"
+                effective_status = "shady"
 
             next_change = await get_next_sun_change_with_weather(
                 bench_id, lat, lon, rounded_time, effective_status == "sunny"
@@ -200,7 +200,7 @@ async def get_bench_sun_status(
         elif is_weather_sunny is True:
             effective_status = "sunny"
         else:
-            effective_status = "sunny" if clear_sky_exposed else "shady"
+            effective_status = "shady"
 
         next_change = await get_next_sun_change_with_weather(
             bench_id, lat, lon, rounded_time, effective_status == "sunny"
