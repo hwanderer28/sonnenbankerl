@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:intl/intl.dart';
 
 import '../models/bench.dart';
 import '../models/bench_info.dart';
@@ -37,13 +39,18 @@ class _BenchMapState extends State<BenchMap> {
   bool _isSunnyInGraz = false; // safer default
   String _sunMessage = '';
 
+  // Bench data for stats
+  List<Bench> _allBenches = [];
+  DateTime _currentTime = DateTime.now();
+  Timer? _timeTimer;
+
   final String styleUrl =
       'https://api.maptiler.com/maps/toner-v2/style.json?key=fBScLUgzlIfxNaaEbTn7';
 
   // Test-Position (Graz) – later replace with user location
   static const double _queryLat = 47.0707;
   static const double _queryLon = 15.4395;
-  static const double _radiusMeters = 1500;
+  static const double _radiusMeters = 5000;
 
   // GeoJSON source + layers
   static const String _sourceId = 'benches_source';
@@ -60,6 +67,21 @@ class _BenchMapState extends State<BenchMap> {
     super.initState();
     _handedness = widget.handedness;
     _loadFavorites();
+    _startTimeTimer();
+  }
+
+  @override
+  void dispose() {
+    _timeTimer?.cancel();
+    _mapController?.onFeatureTapped.remove(_onFeatureTapped);
+    super.dispose();
+  }
+
+  void _startTimeTimer() {
+    _timeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _currentTime = DateTime.now());
+    });
   }
 
   Future<void> _loadFavorites() async {
@@ -126,6 +148,9 @@ class _BenchMapState extends State<BenchMap> {
         lon: _queryLon,
         radius: _radiusMeters,
       );
+      if (mounted) {
+        setState(() => _allBenches = benches);
+      }
     } catch (_) {
       return;
     }
@@ -196,7 +221,7 @@ class _BenchMapState extends State<BenchMap> {
           ["get", "point_count"],
           "#D6C2A8", // sand
           10,
-          "#D4A84F", // sunGold
+          "#6E7B87", // blueGrey (neutral, won't confuse with sunny benches)
           30,
           "#1C2A3A", // deepBlue
         ],
@@ -211,8 +236,9 @@ class _BenchMapState extends State<BenchMap> {
       _clusterCountLayerId,
       SymbolLayerProperties(
         textField: ["get", "point_count_abbreviated"],
-        textSize: 12,
-        textColor: "#FFFFFF",
+        textSize: 13,
+        textColor: "#1C2A3A",
+        textFont: ["Open Sans Bold", "Arial Unicode MS Bold"],
       ),
       filter: ["has", "point_count"],
       enableInteraction: true,
@@ -231,7 +257,7 @@ class _BenchMapState extends State<BenchMap> {
           "sunny",
           "#FFD54F",
           "shady",
-          "#42A5F5",
+          "#244975",
           "#9E9E9E",
         ],
       ),
@@ -337,6 +363,115 @@ class _BenchMapState extends State<BenchMap> {
     await _loadAndRenderBenches();
   }
 
+  Widget _buildTopBar() {
+    final timeFormat = DateFormat('HH:mm');
+    final dateFormat = DateFormat('EEE, MMM d, y');
+
+    int sunnyCount = 0;
+    int shadyCount = 0;
+
+    for (final bench in _allBenches) {
+      final effectiveStatus = _isSunnyInGraz ? bench.currentStatus : 'shady';
+      if (effectiveStatus.trim().toLowerCase() == 'sunny') {
+        sunnyCount++;
+      } else if (effectiveStatus.trim().toLowerCase() == 'shady') {
+        shadyCount++;
+      }
+    }
+
+    final statsText = _allBenches.isEmpty
+        ? 'Loading bench stats...'
+        : '$sunnyCount sunny benches · $shadyCount shaded benches';
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.only(top: 12, left: 12, right: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.deepBlue.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const [
+            BoxShadow(blurRadius: 12, color: Colors.black26),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_serverOnline) ...[
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.cloud_off, color: Colors.red, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Server offline',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textLight,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _isSunnyInGraz ? Icons.wb_sunny : Icons.cloud,
+                    color: _isSunnyInGraz ? AppColors.sunGold : AppColors.blueGrey,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    (_sunMessage.trim().isEmpty)
+                        ? (_isSunnyInGraz ? 'Sunny in Graz' : 'Overcast in Graz')
+                        : _sunMessage,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textLight,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+            Text(
+              timeFormat.format(_currentTime),
+              style: const TextStyle(
+                color: AppColors.sunGold,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              dateFormat.format(_currentTime),
+              style: const TextStyle(
+                color: AppColors.sunGold,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              statsText,
+              style: TextStyle(
+                color: AppColors.textLight.withOpacity(0.95),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openSettings() {
     showModalBottomSheet(
       context: context,
@@ -350,12 +485,6 @@ class _BenchMapState extends State<BenchMap> {
         },
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _mapController?.onFeatureTapped.remove(_onFeatureTapped);
-    super.dispose();
   }
 
   @override
@@ -373,64 +502,12 @@ class _BenchMapState extends State<BenchMap> {
             ),
           ),
 
-          // Status badge (bottom-left) – maxWidth 370
+          // Top bar with time, date, and bench stats
           Positioned(
-            left: 12,
-            bottom: 16,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 370),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.deepBlue.withOpacity(0.85),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: const [
-                  BoxShadow(blurRadius: 8, color: Colors.black26),
-                ],
-              ),
-              child: !_serverOnline
-                  ? Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Icon(Icons.cloud_off, color: Colors.red, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Server currently offline. Please try again later.',
-                      style:
-                      TextStyle(fontSize: 13, color: AppColors.textLight),
-                      softWrap: true,
-                    ),
-                  ),
-                ],
-              )
-                  : Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    _isSunnyInGraz ? Icons.wb_sunny : Icons.cloud,
-                    color: _isSunnyInGraz
-                        ? AppColors.sunGold
-                        : AppColors.blueGrey,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      (_sunMessage.trim().isEmpty)
-                          ? (_isSunnyInGraz
-                          ? 'Sunny in Graz'
-                          : 'No direct sunlight in Graz')
-                          : _sunMessage,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textLight,
-                      ),
-                      softWrap: true,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildTopBar(),
           ),
 
           // Buttons (handedness-aware)

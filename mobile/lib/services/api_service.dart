@@ -12,7 +12,9 @@ class ApiService {
     if (simulateOffline) return false;
 
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/health'));
+      final response = await http
+          .get(Uri.parse('$baseUrl/api/health'))
+          .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['status'] == 'healthy';
@@ -38,7 +40,7 @@ class ApiService {
       },
     );
 
-    final response = await http.get(uri);
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
     if (response.statusCode != 200) {
       throw Exception('Failed to load benches: ${response.statusCode}');
     }
@@ -53,7 +55,9 @@ class ApiService {
   Future<Bench> getBenchDetails(int benchId) async {
     if (simulateOffline) throw Exception('Offline simulated');
 
-    final resp = await http.get(Uri.parse('$baseUrl/api/benches/$benchId'));
+    final resp = await http
+        .get(Uri.parse('$baseUrl/api/benches/$benchId'))
+        .timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) {
       throw Exception('Failed to load bench details: ${resp.statusCode}');
     }
@@ -72,7 +76,7 @@ class ApiService {
       queryParameters: {'refresh': refresh.toString()},
     );
 
-    final resp = await http.get(uri);
+    final resp = await http.get(uri).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) {
       throw Exception('Failed to load weather status: ${resp.statusCode}');
     }
