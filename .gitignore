@@ -32,8 +32,20 @@ mobile/ios/Pods/
 mobile/ios/.symlinks/
 mobile/ios/Flutter/Flutter.framework
 mobile/ios/Flutter/Flutter.podspec
-mobile/.flutter-plugins-dependencies
-mobile/pubspec.lock
+mobile/.metadata
+mobile/*.iml
+mobile/android/.gradle/
+mobile/android/.idea/
+mobile/android/captures/
+mobile/android/local.properties
+mobile/android/app/google-services.json
+mobile/ios/Runner.xcworkspace/xcuserdata/
+mobile/ios/Runner.xcworkspace/xcshareddata/
+mobile/macos/Runner.xcworkspace/xcuserdata/
+mobile/macos/Runner.xcworkspace/xcshareddata/
+mobile/linux/flutter/ephemeral/
+mobile/macos/Flutter/ephemeral/
+mobile/windows/flutter/ephemeral/
 
 # Database
 *.sql.gz

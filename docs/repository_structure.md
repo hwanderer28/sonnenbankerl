@@ -23,18 +23,28 @@ sonnenbankerl/
 
 ### Mobile App (`mobile/`)
 
-**Purpose:** Flutter-based iOS/Android application (PLANNED, NOT YET STARTED)
+**Purpose:** Flutter-based iOS/Android application
 
-**Current Status:** Placeholder directory - mobile app development has not begun.
+**Current Status:** Core features implemented, in testing phase
 
 **Key directories:**
-- `lib/models/` - Data models (Bench, Exposure) - **TODO**
-- `lib/services/` - API clients, location services - **TODO**
-- `lib/screens/` - UI screens (Map, BenchDetail) - **TODO**
-- `lib/widgets/` - Reusable UI components - **TODO**
-- `test/` - Unit and widget tests - **TODO**
+- `lib/models/` - Data models (Bench, BenchInfo, WeatherStatus)
+- `lib/services/` - API clients (ApiService), favorites management
+- `lib/screens/` - UI screens (BenchMap, WelcomeScreen, SettingsSheet)
+- `lib/theme/` - App theming and styling
+- `test/` - Unit and widget tests
+- `assets/` - Images and resources (Welcome_Screen.jpg)
 
-**Tech stack:** Flutter, Dart
+**Key Features:**
+- Interactive MapLibre GL map with real-time bench markers
+- Visual sun/shade indicators (yellow for sunny, blue for shady)
+- Bench detail popups with sun exposure predictions
+- Favorites management with local persistence
+- User handedness support (left/right-handed UI)
+- Welcome screen for first-time users
+- Settings panel for app customization
+
+**Tech stack:** Flutter, Dart, MapLibre GL, Dio, SharedPreferences
 
 **Documentation:** [mobile/README.md](../mobile/README.md)
 

@@ -44,10 +44,23 @@ The app displays benches with clear visual indicators: yellowish for sunny bench
 - **Features**: Interactive map, bench markers (yellow= sunny, blue= shady), real-time status
 - **Access**: Serve locally or use production API
 
-### 📋 Planned - Not Yet Started
-- **Mobile App (Flutter)**: iOS/Android application - development not yet started
+### 📱 Mobile App (Flutter) - IN DEVELOPMENT
+- **Location**: `mobile/` directory
+- **Status**: Core features implemented, testing phase
+- **Features**:
+  - Interactive MapLibre GL map with bench markers
+  - Real-time sun/shade indicators (yellow/blue)
+  - Bench details with sun exposure predictions
+  - Favorites management
+  - User handedness support
+  - Welcome screen and settings
+- **Dependencies**: MapLibre GL, Dio, SharedPreferences
+- **Documentation**: See [mobile/README.md](mobile/README.md)
+
+### 📋 Planned Improvements
 - **Automated Weekly Cron**: Currently requires manual execution of `./compute_next_week.sh`
 - **Weather Gate**: Currently disabled by default (`skip_weather_check=True`) for local testing; enable via API parameter for production use
+- **Mobile App Release**: iOS App Store and Google Play Store deployment
 
 ## Features
 
@@ -176,7 +189,7 @@ psql -U postgres -d sonnenbankerl -c "SELECT compute_exposure_next_days_optimize
 ```
 
 **For Flutter Integration:**
-See [Mobile App Integration Guide](mobile/README.md) for complete examples.
+The mobile app is now integrated in the `mobile/` directory. See [Mobile App README](mobile/README.md) for setup and development instructions.
 
 ### 🌐 Frontend test page
 - Path: `frontend/index.html` (Leaflet + MapTiler toner)

@@ -1,128 +1,117 @@
 # Sonnenbankerl Mobile App
 
-Flutter-based mobile application for iOS and Android.
+Flutter-based mobile application for finding sunny park benches in Graz, Austria.
 
-## 🌐 Backend API Integration
+## Overview
 
-The backend API is **deployed and ready to use**:
+The Sonnenbankerl mobile app provides an intuitive interface for users to discover park benches with optimal sun exposure. The app features an interactive map with real-time sun/shade indicators and detailed bench information.
 
-**Base URL**: `https://sonnenbankerl.ideanexus.cloud`
+## Features
 
-**API Documentation**: https://sonnenbankerl.ideanexus.cloud/docs
+- **Interactive Map**: MapLibre GL-based map showing bench locations
+- **Real-time Sun Status**: Visual indicators (yellow for sunny, blue for shady benches)
+- **Bench Details**: Tap any bench to see remaining sun exposure or next sunny period
+- **Favorites**: Save favorite benches for quick access
+- **Handedness Support**: UI adapts to left/right-handed users
+- **Welcome Screen**: First-run introduction to app features
+- **Settings**: Customize app behavior and preferences
 
-### Quick Start
-
-See the complete [API Integration Guide](../docs/API_INTEGRATION.md) for:
-- ✅ All available endpoints
-- ✅ Request/response examples  
-- ✅ Flutter service classes
-- ✅ Model definitions
-- ✅ Error handling
-- ✅ Testing guidelines
-
-### Quick Example
-
-```dart
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-
-// Get benches near user location
-Future<List<dynamic>> getBenches(double lat, double lon) async {
-  final url = Uri.parse(
-    'https://sonnenbankerl.ideanexus.cloud/api/benches'
-  ).replace(queryParameters: {
-    'lat': lat.toString(),
-    'lon': lon.toString(),
-    'radius': '1000',
-  });
-  
-  final response = await http.get(url);
-  
-  if (response.statusCode == 200) {
-    final data = json.decode(response.body);
-    return data['benches'];
-  }
-  throw Exception('Failed to load benches');
-}
-```
-
-### Data Availability
-
-The API serves data only after you import OSM benches and run the precomputation pipeline. Ensure rasters and OSM inputs are loaded before testing queries in the app.
-
-## Project Structure
+## Architecture
 
 ```
 mobile/
 ├── lib/
-│   ├── main.dart              # App entry point
-│   ├── models/                # Data models (Bench, Exposure, etc.)
-│   ├── services/              # API clients, location services
-│   ├── screens/               # UI screens (Map, BenchDetail)
-│   ├── widgets/               # Reusable UI components
-│   └── config/                # App configuration
-├── test/                      # Unit and widget tests
-└── pubspec.yaml              # Dependencies
+│   ├── main.dart                 # App entry point
+│   ├── models/                   # Data models
+│   │   ├── bench.dart
+│   │   ├── bench_info.dart
+│   │   └── weather_status.dart
+│   ├── screens/                  # UI screens
+│   │   ├── bench_map.dart
+│   │   ├── settings_sheet.dart
+│   │   └── welcome_screen.dart
+│   ├── services/                 # API and business logic
+│   │   ├── api_service.dart
+│   │   └── favorites_service.dart
+│   └── theme/                    # App theming
+│       └── app_theme.dart
+└── assets/                       # Images and resources
 ```
 
-## Setup
+## Key Dependencies
+
+- **maplibre_gl** (^0.21.0): Interactive map rendering
+- **dio** (^5.4.0): HTTP client for API communication
+- **http** (^1.1.0): Additional HTTP support
+- **shared_preferences** (^2.2.3): Local data persistence
+- **flutter_phoenix** (^1.1.1): App restart functionality
+- **latlong2** (^0.9.0): Coordinate handling
+- **flutter_svg** (^2.0.7): SVG rendering
+
+## API Integration
+
+The app connects to the Sonnenbankerl backend API:
+
+**Production API**: `https://sonnenbankerl-api.ideanexus.cloud`
+
+**Key Endpoints**:
+- `GET /api/benches?lat={lat}&lon={lon}&radius={radius}` - Search benches
+- `GET /api/benches/{id}` - Get bench details with sun exposure
+- `GET /api/weather/current` - Current weather conditions
+
+For complete API documentation, visit: https://sonnenbankerl-api.ideanexus.cloud/docs
+
+## Getting Started
 
 ### Prerequisites
-- Flutter SDK 3.0+
-- Dart 2.18+
-- Android Studio / Xcode (for mobile development)
+
+- Flutter SDK ^3.10.1
+- Android Studio / Xcode for platform-specific builds
+- Connected device or emulator
 
 ### Installation
 
-```bash
-# Navigate to mobile directory
-cd mobile
+1. Install dependencies:
+   ```bash
+   flutter pub get
+   ```
 
-# Install dependencies
-flutter pub get
+2. Run the app:
+   ```bash
+   # Development mode
+   flutter run
 
-# Run on connected device/emulator
-flutter run
-```
+   # Release build (Android)
+   flutter build apk --release
 
-## Features
+   # Release build (iOS)
+   flutter build ios --release
+   ```
 
-- Interactive map with OpenStreetMap
-- Real-time user location tracking
-- Bench markers (yellow = sunny, blue = shady)
-- Bench detail view with sun exposure predictions
-- Integration with backend API
+### Development
+
+The app uses a clean architecture pattern:
+
+1. **Models** define data structures for benches, weather, and UI state
+2. **Services** handle API communication and data persistence
+3. **Screens** implement UI components and user interactions
+4. **Theme** provides consistent styling across the app
 
 ## Configuration
 
-Update API endpoint in `lib/config/api_config.dart`:
+API endpoint configuration is managed in `lib/services/api_service.dart`. For local development, update the base URL to point to your local backend instance.
 
-```dart
-const String API_BASE_URL = 'https://api.sonnenbankerl.com';
-```
+## Platform Support
 
-## Testing
+- ✅ Android
+- ✅ iOS
+- ⚠️ Web (partial support)
+- ⚠️ Desktop (Linux, macOS, Windows - experimental)
 
-```bash
-# Run all tests
-flutter test
+## Contributing
 
-# Run with coverage
-flutter test --coverage
-```
+This app is part of the Sonnenbankerl project. See the main [project README](../README.md) for more information.
 
-## Build for Production
+## License
 
-```bash
-# Android
-flutter build apk --release
-
-# iOS
-flutter build ios --release
-```
-
-## Documentation
-
-For detailed architecture and API integration, see:
-- [Main README](../README.md)
-- [Backend Architecture](../docs/architecture.md)
+TBD
